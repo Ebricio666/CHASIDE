@@ -35,8 +35,8 @@ st.dataframe(df.head())
 columnas_items = df.columns[5:103]
 
 # Asegúrate de que las columnas clave existan
-columna_carrera = 'Carrera a ingresar'
-columna_nombre = 'Nombre del estudiante'
+columna_carrera = '¿A qué carrera desea ingresar?'
+columna_nombre = 'Ingrese su nombre completo'
 
 # Validación de columnas
 st.write("Columnas detectadas:", df.columns.tolist())
