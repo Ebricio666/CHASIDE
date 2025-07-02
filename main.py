@@ -7,30 +7,23 @@ from io import BytesIO
 
 st.set_page_config(layout="wide")
 
-st.title("📊 Diagnóstico Vocacional con Semáforo")
+st.title("Diagnóstico Vocacional - Semáforo Profesional")
 
-# ============================================
-# 🚦 1️⃣ SUBIR ARCHIVO
-# ============================================
-
-uploaded_file = st.file_uploader("📁 Sube tu archivo Excel (.xlsx) del test CHASIDE", type=["xlsx"])
+# 1️⃣ Subir archivo
+uploaded_file = st.file_uploader("Sube tu archivo Excel (.xlsx) del test CHASIDE", type=["xlsx"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
-    st.success(f"✅ Archivo cargado correctamente.")
+    st.success("Archivo cargado correctamente.")
     st.dataframe(df.head())
 
-    # ============================================
-    # 🚦 2️⃣ CONVERSIÓN RESPUESTAS Sí/No
-    # ============================================
+    # 2️⃣ Convertir Sí/No a 1/0
     columnas_items = [col for col in df.columns if re.match(r'i\d+', col)]
     df[columnas_items] = df[columnas_items].replace(
         {'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0}
     )
 
-    # ============================================
-    # 🚦 3️⃣ COINCIDENCIA SOSPECHOSA
-    # ============================================
+    # 3️⃣ Coincidencia sospechosa
     def calcular_coincidencia(fila):
         valores = fila[columnas_items].values
         suma = valores.sum()
@@ -41,9 +34,7 @@ if uploaded_file:
 
     df['Coincidencia'] = df.apply(calcular_coincidencia, axis=1)
 
-    # ============================================
-    # 🚦 4️⃣ SUMA INTERESES Y APTITUDES
-    # ============================================
+    # 4️⃣ Suma intereses y aptitudes
     areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
 
     intereses_items = {
@@ -71,9 +62,7 @@ if uploaded_file:
     for area, items in aptitudes_items.items():
         df[f'APTITUD_{area}'] = df[[f'i{num}' for num in items]].sum(axis=1)
 
-    # ============================================
-    # 🚦 5️⃣ ÁREA FUERTE Y PONDERADA
-    # ============================================
+    # 5️⃣ Áreas fuertes y ponderadas
     df['Area_Fuerte_Intereses'] = df.apply(
         lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1
     )
@@ -88,15 +77,15 @@ if uploaded_file:
     peso_aptitudes = 0.2
 
     for area in areas:
-        df[f'PUNTAJE_COMBINADO_{area}'] = df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
+        df[f'PUNTAJE_COMBINADO_{area}'] = (
+            df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
+        )
 
     df['Area_Fuerte_Ponderada'] = df.apply(
         lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1
     )
 
-    # ============================================
-    # 🚦 6️⃣ PERFIL CARRERAS Y COHERENCIA
-    # ============================================
+    # 6️⃣ Evaluación de coherencia
     perfil_carreras = {
         'Arquitectura': {'Fuerte': ['A', 'I'], 'Baja': ['E']},
         'Contador Público': {'Fuerte': ['C', 'H'], 'Baja': ['D']},
@@ -115,32 +104,38 @@ if uploaded_file:
         perfil = perfil_carreras.get(carrera_str)
         if perfil:
             if area in perfil['Fuerte']:
-                return '✔️ Coherente'
+                return 'Coherente'
             elif area in perfil['Baja']:
-                return '⚠️ Requiere Orientación'
+                return 'Requiere Orientación'
             else:
-                return '✅ Neutral'
-        return '❓ Sin perfil definido'
+                return 'Neutral'
+        return 'Sin perfil definido'
 
-    df['Coincidencia_Intereses'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Intereses'], r['Carrera a ingresar']), axis=1)
-    df['Coincidencia_Aptitudes'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Aptitudes'], r['Carrera a ingresar']), axis=1)
-    df['Coincidencia_Ambos'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Total'], r['Carrera a ingresar']), axis=1)
-    df['Coincidencia_Ponderada'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Ponderada'], r['Carrera a ingresar']), axis=1)
+    df['Coincidencia_Intereses'] = df.apply(
+        lambda r: evaluar(r['Area_Fuerte_Intereses'], r['Carrera a ingresar']), axis=1
+    )
+    df['Coincidencia_Aptitudes'] = df.apply(
+        lambda r: evaluar(r['Area_Fuerte_Aptitudes'], r['Carrera a ingresar']), axis=1
+    )
+    df['Coincidencia_Ambos'] = df.apply(
+        lambda r: evaluar(r['Area_Fuerte_Total'], r['Carrera a ingresar']), axis=1
+    )
+    df['Coincidencia_Ponderada'] = df.apply(
+        lambda r: evaluar(r['Area_Fuerte_Ponderada'], r['Carrera a ingresar']), axis=1
+    )
 
-    # ============================================
-    # 🚦 7️⃣ DIAGNÓSTICO Y SEMÁFORO
-    # ============================================
+    # 7️⃣ Diagnóstico y semáforo profesional
     def carrera_mejor(r):
         if r['Coincidencia'] >= 0.75:
-            return '⚠️ Información no aceptable'
+            return 'Información no aceptable'
         a = r['Area_Fuerte_Ponderada']
         c_actual = str(r['Carrera a ingresar']).strip()
         s = [c for c, p in perfil_carreras.items() if a in p['Fuerte']]
-        return c_actual if c_actual in s else ', '.join(s) if s else 'Sin sugerencia clara, revisa con Orientador'
+        return c_actual if c_actual in s else ', '.join(s) if s else 'Sin sugerencia clara'
 
     def diagnostico(r):
-        if r['Carrera_Mejor_Perfilada'] == '⚠️ Información no aceptable':
-            return '⚠️ Información no aceptable'
+        if r['Carrera_Mejor_Perfilada'] == 'Información no aceptable':
+            return 'Información no aceptable'
         if str(r['Carrera a ingresar']).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
             return 'Perfil adecuado'
         else:
@@ -149,30 +144,46 @@ if uploaded_file:
     def semaforo(r):
         diag = r['Diagnóstico Primario Vocacional']
         if 'Información no aceptable' in diag:
-            return '👻'
+            return 'No aceptable'
         elif 'Sin sugerencia clara' in diag:
-            return '❓'
+            return 'Sin sugerencia'
         elif diag == 'Perfil adecuado':
-            if r['Coincidencia_Ponderada'] == '✔️ Coherente':
-                return '🟢✔️'
-            elif r['Coincidencia_Ponderada'] == '✅ Neutral':
-                return '🟡⚠️'
-            elif r['Coincidencia_Ponderada'] == '⚠️ Requiere Orientación':
-                return '🔴🚨'
+            if r['Coincidencia_Ponderada'] == 'Coherente':
+                return 'Verde'
+            elif r['Coincidencia_Ponderada'] == 'Neutral':
+                return 'Amarillo'
+            elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
+                return 'Rojo'
         elif 'Sugerencia:' in diag:
-            if r['Coincidencia_Ponderada'] == '✔️ Coherente':
-                return '🟢✔️'
-            elif r['Coincidencia_Ponderada'] == '✅ Neutral':
-                return '🟡⚠️'
-            elif r['Coincidencia_Ponderada'] == '⚠️ Requiere Orientación':
-                return '🔴🚨'
-        return '❓'
+            if r['Coincidencia_Ponderada'] == 'Coherente':
+                return 'Verde'
+            elif r['Coincidencia_Ponderada'] == 'Neutral':
+                return 'Amarillo'
+            elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
+                return 'Rojo'
+        return 'Sin sugerencia'
 
     df['Carrera_Mejor_Perfilada'] = df.apply(carrera_mejor, axis=1)
     df['Diagnóstico Primario Vocacional'] = df.apply(diagnostico, axis=1)
     df['Semáforo Vocacional'] = df.apply(semaforo, axis=1)
 
-    # ============================================
-    # 🚦 8️⃣ DESCARGA EXCEL MULTI-HOJA
-    # ============================================
-    orden = {'🟢✔️': 1, '🟡⚠️': 2, '🔴🚨':
+    # 8️⃣ Descargar Excel multi-hoja
+    orden = {'Verde': 1, 'Amarillo': 2, 'Rojo': 3, 'Sin sugerencia': 4, 'No aceptable': 5}
+    df['Orden_Semaforo'] = df['Semáforo Vocacional'].map(orden).fillna(6)
+    df = df.sort_values(by=['Orden_Semaforo']).reset_index(drop=True)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
+        df[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
+        df[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
+        df[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
+        df[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
+    output.seek(0)
+
+    st.download_button(
+        label="Descargar Diagnóstico Vocacional",
+        data=output,
+        file_name="Diagnostico_Vocacional.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
