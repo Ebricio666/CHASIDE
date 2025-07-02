@@ -1,45 +1,66 @@
+# ============================================
+# 📌 IMPORTS
+# ============================================
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
 from io import BytesIO
 
 # ============================================
-# 📌 CONFIG
+# 📌 CONFIGURACIÓN INICIAL
 # ============================================
 st.set_page_config(layout="wide")
+
 st.title("Diagnóstico Vocacional - Escala CHASIDE")
+
 st.markdown("""
 **Tecnológico Nacional de México, Instituto Tecnológico de Colima**  
 **Elaborado por:** Dra. Elena Elsa Bricio Barrios, Dr. Santiago Arceo-Díaz y Psicóloga Martha Cecilia Ramírez Guzmán
 """)
 
 # ============================================
-# 📌 CARGAR GOOGLE SHEETS COMO CSV
+# 📌 LECTURA DESDE GOOGLE SHEETS (como CSV)
 # ============================================
 url = "https://docs.google.com/spreadsheets/d/1BNAeOSj2F378vcJE5-T8iJ8hvoseOleOHr-I7mVfYu4/export?format=csv"
+
 df = pd.read_csv(url)
-
-st.success("✅ Datos cargados correctamente desde Google Sheets.")
-st.write(df.head())
-
-# ============================================
-# 📌 SELECCIONAR COLUMNAS POR POSICIÓN (F a CV)
-# ============================================
-columnas_items = df.columns[5:103]  # Columna F = índice 5, CV ≈ 102
-df[columnas_items] = df[columnas_items].replace(
-    {'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0}
-)
+st.success("✅ Datos cargados correctamente desde Google Sheets")
+st.dataframe(df.head())
 
 # ============================================
-# 📌 Coincidencia sospechosa
+# 📌 SELECCIÓN DE COLUMNAS
+# ============================================
+
+# Posiciones: F a CV = columnas 5 a 103 en base 0
+columnas_items = df.columns[5:103]
+
+# Asegúrate de que las columnas clave existan
+columna_carrera = 'Carrera a ingresar'
+columna_nombre = 'Nombre del estudiante'
+
+# Validación de columnas
+st.write("Columnas detectadas:", df.columns.tolist())
+
+if columna_carrera not in df.columns or columna_nombre not in df.columns:
+    st.error("❌ Revisa que 'Carrera a ingresar' y 'Nombre del estudiante' existan en tu archivo.")
+    st.stop()
+
+# ============================================
+# 📌 CONVERSIÓN Sí/No a 1/0
+# ============================================
+df[columnas_items] = df[columnas_items].replace({
+    'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0
+})
+
+# ============================================
+# 📌 COINCIDENCIA SOSPECHOSA
 # ============================================
 def calcular_coincidencia(fila):
     valores = fila[columnas_items].values
     suma = valores.sum()
     total = len(valores)
     if total == 0:
-        return np.nan
+        return 0
     porcentaje_si = suma / total
     porcentaje_no = 1 - porcentaje_si
     return max(porcentaje_si, porcentaje_no)
@@ -47,10 +68,11 @@ def calcular_coincidencia(fila):
 df['Coincidencia'] = df.apply(calcular_coincidencia, axis=1)
 
 # ============================================
-# 📌 Suma Intereses y Aptitudes usando índices
+# 📌 SUMA INTERESES Y APTITUDES
 # ============================================
 areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
 
+# Mapear ítems a columnas por posición F a CV
 intereses_items = {
     'C': [1, 12, 20, 53, 64, 71, 78, 85, 91, 98],
     'H': [9, 25, 34, 41, 56, 67, 74, 80, 89, 95],
@@ -71,28 +93,22 @@ aptitudes_items = {
     'E': [7, 55, 79, 94]
 }
 
-# Sumar intereses
+# Función para mapear número de ítem a columna real
+def col_item(num):
+    return columnas_items[num - 1]
+
 for area, items in intereses_items.items():
-    columnas_area = [columnas_items[i-1] for i in items]
-    df[f'INTERES_{area}'] = df[columnas_area].sum(axis=1)
+    df[f'INTERES_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
 
-# Sumar aptitudes
 for area, items in aptitudes_items.items():
-    columnas_area = [columnas_items[i-1] for i in items]
-    df[f'APTITUD_{area}'] = df[columnas_area].sum(axis=1)
+    df[f'APTITUD_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
 
 # ============================================
-# 📌 Áreas fuertes y ponderadas
+# 📌 ÁREAS FUERTES Y PONDERADAS
 # ============================================
-df['Area_Fuerte_Intereses'] = df.apply(
-    lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1
-)
-df['Area_Fuerte_Aptitudes'] = df.apply(
-    lambda fila: max(areas, key=lambda a: fila[f'APTITUD_{a}']), axis=1
-)
-df['Area_Fuerte_Total'] = df.apply(
-    lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}'] + fila[f'APTITUD_{a}']), axis=1
-)
+df['Area_Fuerte_Intereses'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1)
+df['Area_Fuerte_Aptitudes'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'APTITUD_{a}']), axis=1)
+df['Area_Fuerte_Total'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}'] + fila[f'APTITUD_{a}']), axis=1)
 
 peso_intereses = 0.8
 peso_aptitudes = 0.2
@@ -102,12 +118,10 @@ for area in areas:
         df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
     )
 
-df['Area_Fuerte_Ponderada'] = df.apply(
-    lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1
-)
+df['Area_Fuerte_Ponderada'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1)
 
 # ============================================
-# 📌 Evaluación de coherencia
+# 📌 EVALUACIÓN DE COHERENCIA
 # ============================================
 perfil_carreras = {
     'Arquitectura': {'Fuerte': ['A', 'I'], 'Baja': ['E']},
@@ -123,8 +137,7 @@ perfil_carreras = {
 }
 
 def evaluar(area, carrera):
-    carrera_str = str(carrera).strip()
-    perfil = perfil_carreras.get(carrera_str)
+    perfil = perfil_carreras.get(str(carrera).strip())
     if perfil:
         if area in perfil['Fuerte']:
             return 'Coherente'
@@ -134,31 +147,26 @@ def evaluar(area, carrera):
             return 'Neutral'
     return 'Sin perfil definido'
 
-df['Coincidencia_Intereses'] = df.apply(
-    lambda r: evaluar(r['Area_Fuerte_Intereses'], r['Carrera a ingresar']), axis=1
-)
-df['Coincidencia_Aptitudes'] = df.apply(
-    lambda r: evaluar(r['Area_Fuerte_Aptitudes'], r['Carrera a ingresar']), axis=1
-)
-df['Coincidencia_Ambos'] = df.apply(
-    lambda r: evaluar(r['Area_Fuerte_Total'], r['Carrera a ingresar']), axis=1
-)
-df['Coincidencia_Ponderada'] = df.apply(
-    lambda r: evaluar(r['Area_Fuerte_Ponderada'], r['Carrera a ingresar']), axis=1
-)
+df['Coincidencia_Intereses'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Intereses'], r[columna_carrera]), axis=1)
+df['Coincidencia_Aptitudes'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Aptitudes'], r[columna_carrera]), axis=1)
+df['Coincidencia_Ambos'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Total'], r[columna_carrera]), axis=1)
+df['Coincidencia_Ponderada'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Ponderada'], r[columna_carrera]), axis=1)
 
+# ============================================
+# 📌 DIAGNÓSTICO Y SEMÁFORO
+# ============================================
 def carrera_mejor(r):
     if r['Coincidencia'] >= 0.75:
         return 'Información no aceptable'
     a = r['Area_Fuerte_Ponderada']
-    c_actual = str(r['Carrera a ingresar']).strip()
+    c_actual = str(r[columna_carrera]).strip()
     s = [c for c, p in perfil_carreras.items() if a in p['Fuerte']]
     return c_actual if c_actual in s else ', '.join(s) if s else 'Sin sugerencia clara'
 
 def diagnostico(r):
     if r['Carrera_Mejor_Perfilada'] == 'Información no aceptable':
         return 'Información no aceptable'
-    if str(r['Carrera a ingresar']).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
+    if str(r[columna_carrera]).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
         return 'Perfil adecuado'
     else:
         return f"Sugerencia: {r['Carrera_Mejor_Perfilada']}"
@@ -190,14 +198,14 @@ df['Diagnóstico Primario Vocacional'] = df.apply(diagnostico, axis=1)
 df['Semáforo Vocacional'] = df.apply(semaforo, axis=1)
 
 # ============================================
-# 📌 ORDEN Y EXPORTAR MULTI-HOJA
+# 📌 EXPORTAR MULTI-HOJA
 # ============================================
 orden = {'Verde': 1, 'Amarillo': 2, 'Rojo': 3, 'Sin sugerencia': 4, 'No aceptable': 5}
 df['Orden_Semaforo'] = df['Semáforo Vocacional'].map(orden).fillna(6)
 df = df.sort_values(by=['Orden_Semaforo']).reset_index(drop=True)
 
 cols_final = [
-    'Nombre del estudiante', 'Carrera a ingresar',
+    columna_nombre, columna_carrera,
     'Area_Fuerte_Intereses', 'Coincidencia_Intereses',
     'Area_Fuerte_Aptitudes', 'Coincidencia_Aptitudes',
     'Area_Fuerte_Total', 'Coincidencia_Ambos',
@@ -210,8 +218,11 @@ df_final = df[cols_final]
 
 output = BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    for color in ['Verde', 'Amarillo', 'Rojo', 'Sin sugerencia', 'No aceptable']:
-        df_final[df['Semáforo Vocacional'] == color].to_excel(writer, sheet_name=color, index=False)
+    df_final[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
+    df_final[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
+    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
+    df_final[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
+    df_final[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
 output.seek(0)
 
 st.download_button(
@@ -221,5 +232,5 @@ st.download_button(
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-st.subheader("📊 Tabla resumida")
+st.subheader("🔍 Vista previa")
 st.dataframe(df_final)
