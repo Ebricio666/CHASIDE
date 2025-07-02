@@ -7,7 +7,23 @@ from io import BytesIO
 
 st.set_page_config(layout="wide")
 
-st.title("Diagnóstico Vocacional - Semáforo Profesional")
+st.title("Diagnóstico Vocacional - Escala CHASIDE")
+
+st.markdown("""
+**Tecnológico Nacional de México, Instituto Tecnológico de Colima**  
+**Elaborado por:** Dra. Elena Elsa Bricio-Barrios, Dr. Santiago Arceo-Díaz y Psicóloga Martha Cecilia Ramírez Guzmán
+""")
+
+# app.py
+import streamlit as st
+import pandas as pd
+import numpy as np
+import re
+from io import BytesIO
+
+st.set_page_config(layout="wide")
+
+st.title("Diagnóstico Vocacional - CHASIDE")
 
 # 1️⃣ Subir archivo
 uploaded_file = st.file_uploader("Sube tu archivo Excel (.xlsx) del test CHASIDE", type=["xlsx"])
@@ -15,7 +31,6 @@ uploaded_file = st.file_uploader("Sube tu archivo Excel (.xlsx) del test CHASIDE
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     st.success("Archivo cargado correctamente.")
-    st.dataframe(df.head())
 
     # 2️⃣ Convertir Sí/No a 1/0
     columnas_items = [col for col in df.columns if re.match(r'i\d+', col)]
@@ -124,7 +139,6 @@ if uploaded_file:
         lambda r: evaluar(r['Area_Fuerte_Ponderada'], r['Carrera a ingresar']), axis=1
     )
 
-    # 7️⃣ Diagnóstico y semáforo profesional
     def carrera_mejor(r):
         if r['Coincidencia'] >= 0.75:
             return 'Información no aceptable'
@@ -167,22 +181,44 @@ if uploaded_file:
     df['Diagnóstico Primario Vocacional'] = df.apply(diagnostico, axis=1)
     df['Semáforo Vocacional'] = df.apply(semaforo, axis=1)
 
-    # 8️⃣ Descargar Excel multi-hoja
+    # Tabla solo con campos clave
+    cols_final_vista = [
+        'Nombre del estudiante',
+        'Carrera a ingresar',
+        'Area_Fuerte_Intereses', 'Coincidencia_Intereses',
+        'Area_Fuerte_Aptitudes', 'Coincidencia_Aptitudes',
+        'Area_Fuerte_Total', 'Coincidencia_Ambos',
+        'Area_Fuerte_Ponderada', 'Coincidencia_Ponderada',
+        'Carrera_Mejor_Perfilada'
+    ]
+
+    df_vista = df[cols_final_vista]
+
+    st.subheader("Tabla de resultados resumidos")
+    st.dataframe(df_vista)
+
+    # Excel multi-hoja con todo
+    cols_final_export = cols_final_vista + [
+        'Diagnóstico Primario Vocacional', 'Semáforo Vocacional'
+    ]
+
+    df_final = df[cols_final_export]
+
     orden = {'Verde': 1, 'Amarillo': 2, 'Rojo': 3, 'Sin sugerencia': 4, 'No aceptable': 5}
-    df['Orden_Semaforo'] = df['Semáforo Vocacional'].map(orden).fillna(6)
-    df = df.sort_values(by=['Orden_Semaforo']).reset_index(drop=True)
+    df_final['Orden_Semaforo'] = df['Semáforo Vocacional'].map(orden).fillna(6)
+    df_final = df_final.sort_values(by=['Orden_Semaforo']).reset_index(drop=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
-        df[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
-        df[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
-        df[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
-        df[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
+        df_final[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
+        df_final[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
+        df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
+        df_final[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
+        df_final[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
     output.seek(0)
 
     st.download_button(
-        label="Descargar Diagnóstico Vocacional",
+        label="Descargar Diagnóstico Vocacional (Excel por pestaña)",
         data=output,
         file_name="Diagnostico_Vocacional.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
