@@ -31,15 +31,11 @@ st.dataframe(df.head())
 # ============================================
 # 📌 SELECCIÓN DE COLUMNAS
 # ============================================
+columnas_items = df.columns[5:103]  # F a CV
 
-# Posiciones: F a CV = columnas 5 a 103 en base 0
-columnas_items = df.columns[5:103]
-
-# Asegúrate de que las columnas clave existan
 columna_carrera = '¿A qué carrera desea ingresar?'
-columna_nombre = 'Ingrese su nombre completo'
+columna_nombre  = 'Ingrese su nombre completo'
 
-# Validación de columnas
 st.write("Columnas detectadas:", df.columns.tolist())
 
 if columna_carrera not in df.columns or columna_nombre not in df.columns:
@@ -49,21 +45,17 @@ if columna_carrera not in df.columns or columna_nombre not in df.columns:
 # ============================================
 # 📌 CONVERSIÓN Sí/No a 1/0
 # ============================================
-df[columnas_items] = df[columnas_items].replace({
-    'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0
-})
-
-# Forzar numérico en los ítems y manejar valores raros
+df[columnas_items] = df[columnas_items].replace({'Sí':1,'Si':1,'si':1,'No':0,'no':0})
 df[columnas_items] = (
     df[columnas_items]
-    .apply(pd.to_numeric, errors='coerce')   # convierte "1", "0", vacíos, etc. a números o NaN
-    .fillna(0)                               # cualquier cosa no convertible → 0
-    .astype(int)                             # enteros 0/1
+    .apply(pd.to_numeric, errors='coerce')
+    .fillna(0)
+    .astype(int)
 )
 
-# === Vectorizar coincidencia sospechosa (sin apply) ===
-suma_si = df[columnas_items].sum(axis=1)                      # cuántos "Sí"
-total_resp = df[columnas_items].notna().sum(axis=1)           # cuántos ítems válidos
+# Coincidencia sospechosa (vectorizado)
+suma_si = df[columnas_items].sum(axis=1)
+total_resp = df[columnas_items].notna().sum(axis=1)
 porcentaje_si = np.where(total_resp == 0, 0, suma_si / total_resp)
 porcentaje_no = 1 - porcentaje_si
 df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)
@@ -73,7 +65,6 @@ df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)
 # ============================================
 areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
 
-# Mapear ítems a columnas por posición F a CV
 intereses_items = {
     'C': [1, 12, 20, 53, 64, 71, 78, 85, 91, 98],
     'H': [9, 25, 34, 41, 56, 67, 74, 80, 89, 95],
@@ -83,7 +74,6 @@ intereses_items = {
     'D': [5, 14, 24, 31, 37, 48, 58, 65, 73, 84],
     'E': [17, 32, 35, 42, 49, 61, 68, 77, 88, 93]
 }
-
 aptitudes_items = {
     'C': [2, 15, 46, 51],
     'H': [30, 63, 72, 86],
@@ -94,316 +84,290 @@ aptitudes_items = {
     'E': [7, 55, 79, 94]
 }
 
-# Función para mapear número de ítem a columna real
-def col_item(num):
-    return columnas_items[num - 1]
+def col_item(num): return columnas_items[num-1]
 
-for area, items in intereses_items.items():
-    df[f'INTERES_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
-
-for area, items in aptitudes_items.items():
-    df[f'APTITUD_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
+for a, items in intereses_items.items():
+    df[f'INTERES_{a}'] = df[[col_item(i) for i in items]].sum(axis=1)
+for a, items in aptitudes_items.items():
+    df[f'APTITUD_{a}'] = df[[col_item(i) for i in items]].sum(axis=1)
 
 # ============================================
 # 📌 ÁREAS FUERTES Y PONDERADAS
 # ============================================
-df['Area_Fuerte_Intereses'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1)
-df['Area_Fuerte_Aptitudes'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'APTITUD_{a}']), axis=1)
-df['Area_Fuerte_Total'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}'] + fila[f'APTITUD_{a}']), axis=1)
+df['Area_Fuerte_Intereses'] = df.apply(lambda r: max(areas, key=lambda a: r[f'INTERES_{a}']), axis=1)
+df['Area_Fuerte_Aptitudes'] = df.apply(lambda r: max(areas, key=lambda a: r[f'APTITUD_{a}']), axis=1)
+df['Area_Fuerte_Total']     = df.apply(lambda r: max(areas, key=lambda a: r[f'INTERES_{a}'] + r[f'APTITUD_{a}']), axis=1)
 
-peso_intereses = 0.8
-peso_aptitudes = 0.2
+peso_intereses, peso_aptitudes = 0.8, 0.2
+for a in areas:
+    df[f'PUNTAJE_COMBINADO_{a}'] = df[f'INTERES_{a}'] * peso_intereses + df[f'APTITUD_{a}'] * peso_aptitudes
 
-for area in areas:
-    df[f'PUNTAJE_COMBINADO_{area}'] = (
-        df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
-    )
+df['Area_Fuerte_Ponderada'] = df.apply(lambda r: max(areas, key=lambda a: r[f'PUNTAJE_COMBINADO_{a}']), axis=1)
 
-df['Area_Fuerte_Ponderada'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1)
+# Top-2 áreas (para afinidad)
+def top2_areas_row(r):
+    pts = {a: r[f'PUNTAJE_COMBINADO_{a}'] for a in areas}
+    orden = sorted(pts.items(), key=lambda kv: kv[1], reverse=True)
+    return [orden[0][0], orden[1][0]]
+df['Top2_Areas'] = df.apply(top2_areas_row, axis=1)
 
 # ============================================
-# 🆕 PERFIL ENRIQUECIDO (Personalidad/Aptitudes/Intereses) — fuente: doc de la psicóloga
+# 🧩 CHASIDE por letra (de la tabla que compartiste)
 # ============================================
-perfil_carreras_enriquecido = {
-    'Licenciatura en Administración': {
-        'Personalidad': ['Emprendimiento', 'Convencional'],
-        'Aptitudes': ['Persuasivo', 'Objetivo', 'Práctico', 'Tolerante', 'Responsable', 'Ambicioso'],
-        'Intereses': ['Organizativo', 'Supervisión', 'Orden', 'Análisis', 'Síntesis', 'Colaboración', 'Cálculo', 'Justicia', 'Liderazgo']
-    },
-    'Contador Público': {
-        'Personalidad': ['Emprendimiento', 'Convencional'],
-        'Aptitudes': ['Persuasivo', 'Objetivo', 'Práctico', 'Tolerante', 'Responsable', 'Ambicioso'],
-        'Intereses': ['Organizativo', 'Supervisión', 'Orden', 'Análisis', 'Síntesis', 'Colaboración', 'Cálculo', 'Justicia', 'Liderazgo']
-    },
-    'Arquitectura': {
-        'Personalidad': ['Artística'],
-        'Aptitudes': ['Sensible', 'Imaginativo', 'Creativo', 'Detallista', 'Innovador', 'Intuitivo', 'Analítico', 'Precisión', 'Senso-perceptivo'],
-        'Intereses': ['Estético', 'Armónico', 'Manual', 'Visual', 'Auditivo']
-    },
-    'Ingeniería Mecatrónica': {
-        'Personalidad': ['Realista', 'Investigativa'],
-        'Aptitudes': ['Preciso', 'Práctico', 'Crítico', 'Analítico', 'Metódico', 'Observador', 'Introvertido', 'Paciente', 'Seguro'],
-        'Intereses': ['Cálculo', 'Exactitud', 'Planificación', 'Clasificación', 'Numérico', 'Análisis', 'Síntesis', 'Organización', 'Orden', 'Investigación']
-    },
-    'Ingeniería en Sistemas Computacionales': {
-        'Personalidad': ['Realista', 'Investigativa'],
-        'Aptitudes': ['Preciso', 'Práctico', 'Crítico', 'Analítico', 'Metódico', 'Observador', 'Introvertido', 'Paciente', 'Seguro'],
-        'Intereses': ['Cálculo', 'Exactitud', 'Planificación', 'Clasificación', 'Numérico', 'Análisis', 'Síntesis', 'Organización', 'Orden', 'Investigación']
-    },
-    'Ingeniería en Inteligencia Artificial': {
-        'Personalidad': ['Realista', 'Investigativa'],
-        'Aptitudes': ['Preciso', 'Práctico', 'Crítico', 'Analítico', 'Metódico', 'Observador', 'Introvertido', 'Paciente', 'Seguro'],
-        'Intereses': ['Cálculo', 'Exactitud', 'Planificación', 'Clasificación', 'Numérico', 'Análisis', 'Síntesis', 'Organización', 'Orden', 'Investigación']
-    },
-    'Ingeniería Bioquímica': {
-        'Personalidad': ['Realista', 'Investigativa', 'Convencional'],
-        'Aptitudes': ['Preciso', 'Práctico', 'Crítico', 'Analítico', 'Metódico', 'Observador', 'Responsable', 'Ambicioso'],
-        'Intereses': ['Investigación', 'Organización', 'Supervisión', 'Colaboración', 'Cálculo', 'Clasificación', 'Orden']
-    },
-    'Ingeniería Ambiental': {
-        'Personalidad': ['Realista', 'Investigativa', 'Convencional'],
-        'Aptitudes': ['Preciso', 'Práctico', 'Crítico', 'Analítico', 'Metódico', 'Observador', 'Responsable', 'Ambicioso'],
-        'Intereses': ['Investigación', 'Organización', 'Supervisión', 'Colaboración', 'Cálculo', 'Clasificación', 'Orden']
-    },
-    'Ingeniería en Gestión Empresarial': {
-        'Personalidad': ['Emprendimiento', 'Convencional', 'Social'],
-        'Aptitudes': ['Responsable', 'Justo', 'Conciliador', 'Persuasivo', 'Sagaz', 'Imaginativo'],
-        'Intereses': ['Liderazgo', 'Organización', 'Colaboración', 'Justicia', 'Precisión verbal', 'Relaciones de hechos', 'Lingüística', 'Orden']
-    },
-    'Ingeniería Industrial': {
-        'Personalidad': ['Emprendimiento', 'Convencional', 'Social'],
-        'Aptitudes': ['Responsable', 'Justo', 'Conciliador', 'Persuasivo', 'Sagaz', 'Imaginativo'],
-        'Intereses': ['Liderazgo', 'Organización', 'Colaboración', 'Justicia', 'Precisión verbal', 'Relaciones de hechos', 'Lingüística', 'Orden']
-    }
+perfil_chaside = {
+    'C': {'Intereses':['Organizativo','Supervisión','Orden','Análisis y síntesis','Colaboración','Cálculo'],
+          'Aptitudes':['Persuasivo','Objetivo','Práctico','Tolerante','Responsable','Ambicioso']},
+    'H': {'Intereses':['Precisión Verbal','Organización','Relación de Hechos','Lingüística','Orden','Justicia'],
+          'Aptitudes':['Responsable','Justo','Conciliador','Persuasivo','Sagaz','Imaginativo']},
+    'A': {'Intereses':['Estético','Armónico','Manual','Visual','Auditive','Auditivo'],
+          'Aptitudes':['Sensible','Imaginativo','Creativo','Detallista','Innovador','Intuitivo']},
+    'S': {'Intereses':['Asistir','Investigativo','Precisión','Senso-Perceptivo','Analítico','Ayudar'],
+          'Aptitudes':['Altruista','Solidario','Paciente','Comprensivo','Respetuoso','Persuasivo']},
+    'I': {'Intereses':['Cálculo','Científico','Manual','Exacto','Planificar'],
+          'Aptitudes':['Preciso','Práctico','Crítico','Analítico','Rígido']},
+    'D': {'Intereses':['Justicia','Equidad','Colaboración','Espíritu de Equipo','Liderazgo'],
+          'Aptitudes':['Arriesgado','Solidario','Valiente','Agresivo','Persuasivo']},
+    'E': {'Intereses':['Investigación','Orden','Organización','Análisis y Síntesis','Numérico','Clasificar'],
+          'Aptitudes':['Metódico','Analítico','Observador','Introvertido','Paciente','Seguro']}
 }
 
 # ============================================
-# 🆕 Normalizador de nombre de carrera + índice auxiliar
+# 🧭 Documento de la psicóloga (perfil enriquecido por carrera)
 # ============================================
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
-    s = re.sub(r"\s+", " ", s.strip().lower())
-    return s
-
-perfil_carreras_norm = { _norm(k): v for k, v in perfil_carreras_enriquecido.items() }
-
-# ============================================
-# 🆕 Top-2 áreas por puntaje ponderado y ranking de sugerencias
-# ============================================
-def top2_areas_row(row, areas=('C','H','A','S','I','D','E')):
-    pts = {a: row[f'PUNTAJE_COMBINADO_{a}'] for a in areas}
-    orden = sorted(pts.items(), key=lambda kv: kv[1], reverse=True)
-    return [orden[0][0], orden[1][0]]
-
-def rankear_carreras_por_areas(areas_top2, perfil_dict):
-    a1, a2 = areas_top2
-    ranking = []
-    for carrera, perfil in perfil_dict.items():
-        fuertes = set()  # inferimos 'Fuerte' desde Personalidad+Intereses si quisieras; aquí usamos afinidad por letras
-        bajas   = set()  # no tenemos 'Baja' explícita en el doc; lo tratamos como neutral
-
-        # 🎯 Heurística simple: mapear letras CHASIDE a categorías del perfil
-        # Para mantener tu lógica original de "Fuerte/Baja", conservamos la afinidad por top-2 áreas:
-        def puntaje(area):
-            # bonus si las carreras son naturalmente afines a I/E/C/A/H/S/D según tu catálogo previo
-            # supondremos:
-            afinidades = {
-                'Arquitectura':        ['A','I'],
-                'Contador Público':    ['C','H'],
-                'Licenciatura en Administración': ['C','H'],
-                'Ingeniería Ambiental': ['E','I'],
-                'Ingeniería Bioquímica':['E','I'],
-                'Ingeniería en Gestión Empresarial':['C','I'],
-                'Ingeniería Industrial':['I','C'],
-                'Ingeniería en Inteligencia Artificial':['I','E'],
-                'Ingeniería Mecatrónica':['I','E'],
-                'Ingeniería en Sistemas Computacionales':['I','E'],
-            }
-            af = afinidades.get(carrera, [])
-            if area in af: return 2
-            return 1  # neutral por defecto
-
-        score = puntaje(a1) + puntaje(a2)
-        if all(a in ['A','C','D','E','H','I','S'] for a in [a1,a2]):
-            if carrera in ['Arquitectura'] and set([a1,a2]) <= set(['A','I']):
-                score += 1
-        ranking.append((carrera, score))
-    ranking.sort(key=lambda x: x[1], reverse=True)
-    return ranking
-
-def evaluar_coherencia_por_area(area, carrera_str):
-    # usa el mapeo de afinidad simple (como el original) para coherencia
-    afinidades_fuerte = {
-        'Arquitectura': ['A','I'],
-        'Contador Público': ['C','H'],
-        'Licenciatura en Administración': ['C','H'],
-        'Ingeniería Ambiental': ['E','I'],
-        'Ingeniería Bioquímica': ['E','I'],
-        'Ingeniería en Gestión Empresarial': ['C','I'],
-        'Ingeniería Industrial': ['I','C'],
-        'Ingeniería en Inteligencia Artificial': ['I','E'],
-        'Ingeniería Mecatrónica': ['I','E'],
-        'Ingeniería en Sistemas Computacionales': ['I','E'],
+perfil_carreras_doc = {
+    'Licenciatura en Administración': {
+        'Personalidad': ['Emprendimiento','Convencional'],
+        'Aptitudes':   ['Persuasivo','Objetivo','Práctico','Tolerante','Responsable','Ambicioso'],
+        'Intereses':   ['Organizativo','Supervisión','Orden','Análisis','Síntesis','Colaboración','Cálculo','Justicia','Liderazgo']
+    },
+    'Contador Público': {
+        'Personalidad': ['Emprendimiento','Convencional'],
+        'Aptitudes':   ['Persuasivo','Objetivo','Práctico','Tolerante','Responsable','Ambicioso'],
+        'Intereses':   ['Organizativo','Supervisión','Orden','Análisis','Síntesis','Colaboración','Cálculo','Justicia','Liderazgo']
+    },
+    'Arquitectura': {
+        'Personalidad': ['Artística'],
+        'Aptitudes':   ['Sensible','Imaginativo','Creativo','Detallista','Innovador','Intuitivo','Analítico','Precisión','Senso-perceptivo'],
+        'Intereses':   ['Estético','Armónico','Manual','Visual','Auditivo']
+    },
+    'Ingeniería Mecatrónica': {
+        'Personalidad': ['Realista','Investigativa'],
+        'Aptitudes':   ['Preciso','Práctico','Crítico','Analítico','Metódico','Observador','Introvertido','Paciente','Seguro'],
+        'Intereses':   ['Cálculo','Exactitud','Planificación','Clasificación','Numérico','Análisis','Síntesis','Organización','Orden','Investigación']
+    },
+    'Ingeniería en Sistemas Computacionales': {
+        'Personalidad': ['Realista','Investigativa'],
+        'Aptitudes':   ['Preciso','Práctico','Crítico','Analítico','Metódico','Observador','Introvertido','Paciente','Seguro'],
+        'Intereses':   ['Cálculo','Exactitud','Planificación','Clasificación','Numérico','Análisis','Síntesis','Organización','Orden','Investigación']
+    },
+    'Ingeniería en Inteligencia Artificial': {
+        'Personalidad': ['Realista','Investigativa'],
+        'Aptitudes':   ['Preciso','Práctico','Crítico','Analítico','Metódico','Observador','Introvertido','Paciente','Seguro'],
+        'Intereses':   ['Cálculo','Exactitud','Planificación','Clasificación','Numérico','Análisis','Síntesis','Organización','Orden','Investigación']
+    },
+    'Ingeniería Bioquímica': {
+        'Personalidad': ['Realista','Investigativa','Convencional'],
+        'Aptitudes':   ['Preciso','Práctico','Crítico','Analítico','Metódico','Observador','Responsable','Ambicioso'],
+        'Intereses':   ['Investigación','Organización','Supervisión','Colaboración','Cálculo','Clasificación','Orden']
+    },
+    'Ingeniería Ambiental': {
+        'Personalidad': ['Realista','Investigativa','Convencional'],
+        'Aptitudes':   ['Preciso','Práctico','Crítico','Analítico','Metódico','Observador','Responsable','Ambicioso'],
+        'Intereses':   ['Investigación','Organización','Supervisión','Colaboración','Cálculo','Clasificación','Orden']
+    },
+    'Ingeniería en Gestión Empresarial': {
+        'Personalidad': ['Emprendimiento','Convencional','Social'],
+        'Aptitudes':   ['Responsable','Justo','Conciliador','Persuasivo','Sagaz','Imaginativo'],
+        'Intereses':   ['Liderazgo','Organización','Colaboración','Justicia','Precisión verbal','Relaciones de hechos','Lingüística','Orden']
+    },
+    'Ingeniería Industrial': {
+        'Personalidad': ['Emprendimiento','Convencional','Social'],
+        'Aptitudes':   ['Responsable','Justo','Conciliador','Persuasivo','Sagaz','Imaginativo'],
+        'Intereses':   ['Liderazgo','Organización','Colaboración','Justicia','Precisión verbal','Relaciones de hechos','Lingüística','Orden']
     }
-    afinidades_baja = {
-        'Arquitectura': ['E'],
-        'Contador Público': ['D'],
-        'Licenciatura en Administración': ['D'],
-        'Ingeniería Ambiental': ['A'],
-        'Ingeniería Bioquímica': ['A','S'],
-        'Ingeniería en Gestión Empresarial': ['A'],
-        'Ingeniería Industrial': ['A'],
-        'Ingeniería en Inteligencia Artificial': ['H'],
-        'Ingeniería Mecatrónica': ['H'],
-        'Ingeniería en Sistemas Computacionales': ['H'],
-    }
+}
 
-    carr = None
-    # intentar matching tolerante
-    cnorm = _norm(carrera_str)
-    for k in afinidades_fuerte.keys():
-        if _norm(k) == cnorm:
-            carr = k
+# Letras CHASIDE esperadas por carrera (puente CHASIDE ↔ documento)
+letras_por_carrera = {
+    'Arquitectura': ['A','I'],
+    'Contador Público': ['C','H'],
+    'Licenciatura en Administración': ['C','H'],
+    'Ingeniería Ambiental': ['E','I','C'],
+    'Ingeniería Bioquímica': ['E','I','C'],
+    'Ingeniería en Gestión Empresarial': ['C','I','H'],
+    'Ingeniería Industrial': ['I','C','H'],
+    'Ingeniería en Inteligencia Artificial': ['I','E'],
+    'Ingeniería Mecatrónica': ['I','E'],
+    'Ingeniería en Sistemas Computacionales': ['I','E'],
+}
+
+# Normalizador
+def _norm(s: str):
+    s = unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii")
+    return re.sub(r"\s+"," ", s.strip().lower())
+
+# Perfil fusionado por carrera (CHASIDE + documento psicóloga)
+def perfil_carrera_fusionado(nombre):
+    # encontrar clave normalizada
+    key = None
+    for k in letras_por_carrera.keys():
+        if _norm(k) == _norm(nombre):
+            key = k
             break
-    if carr is None:
-        return 'Sin perfil definido'
+    if key is None:
+        return {'Letras':[], 'Intereses':[], 'Aptitudes':[], 'Personalidad':[]}
 
-    if area in afinidades_fuerte.get(carr, []):
-        return 'Coherente'
-    if area in afinidades_baja.get(carr, []):
-        return 'Requiere Orientación'
+    letras = letras_por_carrera[key]
+    intereses = []
+    aptitudes = []
+    for l in letras:
+        intereses += perfil_chaside[l]['Intereses']
+        aptitudes += perfil_chaside[l]['Aptitudes']
+
+    doc = perfil_carreras_doc.get(key, {})
+    intereses += doc.get('Intereses', [])
+    aptitudes += doc.get('Aptitudes', [])
+    personalidad = doc.get('Personalidad', [])
+
+    # quita duplicados conservando orden
+    def _uniq(seq):
+        seen=set(); out=[]
+        for x in seq:
+            if x not in seen:
+                seen.add(x); out.append(x)
+        return out
+
+    return {
+        'Letras': letras,
+        'Intereses': _uniq(intereses),
+        'Aptitudes': _uniq(aptitudes),
+        'Personalidad': personalidad
+    }
+
+# Coherencia (como referencia para semáforo)
+def evaluar_coherencia_por_area(area, carrera):
+    letras = perfil_carrera_fusionado(carrera)['Letras']
+    if not letras: return 'Sin perfil definido'
+    if area in letras: return 'Coherente'
+    # si está "cerca": consideramos neutral
     return 'Neutral'
 
-# ============================================
-# 📌 EVALUACIÓN DE COHERENCIA (usando funciones nuevas)
-# ============================================
-df['Top2_Areas'] = df.apply(lambda r: top2_areas_row(r), axis=1)
-
-df['Coincidencia_Intereses'] = df.apply(
-    lambda r: evaluar_coherencia_por_area(r['Area_Fuerte_Intereses'], r[columna_carrera]),
-    axis=1
-)
-df['Coincidencia_Aptitudes'] = df.apply(
-    lambda r: evaluar_coherencia_por_area(r['Area_Fuerte_Aptitudes'], r[columna_carrera]),
-    axis=1
-)
-df['Coincidencia_Ambos'] = df.apply(
-    lambda r: evaluar_coherencia_por_area(r['Area_Fuerte_Total'], r[columna_carrera]),
-    axis=1
-)
 df['Coincidencia_Ponderada'] = df.apply(
     lambda r: evaluar_coherencia_por_area(r['Area_Fuerte_Ponderada'], r[columna_carrera]),
     axis=1
 )
 
-# carrera mejor perfilada = si la carrera actual no es coherente con el ponderado, ofrece alternativas (Top-3)
-def sugerencias_top3(row):
-    ranking = rankear_carreras_por_areas(row['Top2_Areas'], perfil_carreras_enriquecido)
-    ranking_pos = [c for c, s in ranking if s > 0]
-    return ", ".join(ranking_pos[:3]) if ranking_pos else "Sin sugerencia clara"
+# Score de afinidad por carrera (por estudiante)
+def score_afinidad(row, carrera):
+    fusion = perfil_carrera_fusionado(carrera)
+    letras = set(fusion['Letras'])
+    if not letras: 
+        return -999  # penaliza carreras no mapeadas
 
-def carrera_mejor_v2(r):
-    if r['Coincidencia'] >= 0.75:
-        return 'Información no aceptable'
-    carr_actual = str(r[columna_carrera]).strip()
-    coher = r['Coincidencia_Ponderada']
-    if coher == 'Coherente':
-        # Si es coherente, mantenemos la elección del estudiante
-        return carr_actual
-    # si no es coherente, sugiere top-3 por afinidad a las dos áreas dominantes
-    return sugerencias_top3(r)
+    a1, a2 = row['Top2_Areas'][0], row['Top2_Areas'][1]
+    score = 0
+    # match con top areas
+    if a1 in letras: score += 3
+    if a2 in letras: score += 2
+    # bonus por coherencia ponderada
+    coher = evaluar_coherencia_por_area(row['Area_Fuerte_Ponderada'], carrera)
+    score += {'Coherente':1, 'Neutral':0}.get(coher, 0)
+    # penalización por respuestas sospechosas
+    if row['Coincidencia'] >= 0.75: score -= 5
+    return score
+
+# Mejor carrera perfilada (fusión CHASIDE + documento)
+oferta = list(letras_por_carrera.keys())
+def mejor_carrera_row(row):
+    ranking = sorted([(c, score_afinidad(row, c)) for c in oferta], key=lambda x: x[1], reverse=True)
+    top = ranking[0]
+    if top[1] < 0:  # todo negativo -> sin sugerencia útil
+        return "Sin sugerencia clara"
+    # si la carrera elegida es coherente y empata con el top, respetar elección
+    elegida = str(row[columna_carrera]).strip()
+    if evaluar_coherencia_por_area(row['Area_Fuerte_Ponderada'], elegida) == 'Coherente':
+        return elegida
+    return top[0]
+
+df['Carrera_Mejor_Perfilada'] = df.apply(mejor_carrera_row, axis=1)
 
 def diagnostico_v2(r):
-    if r['Carrera_Mejor_Perfilada'] == 'Información no aceptable':
-        return 'Información no aceptable'
+    if r['Carrera_Mejor_Perfilada'] == 'Sin sugerencia clara':
+        return 'Sin sugerencia'
     if str(r[columna_carrera]).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
         return 'Perfil adecuado'
-    if 'Sin sugerencia' in r['Carrera_Mejor_Perfilada']:
-        return 'Sin sugerencia'
     return f"Sugerencia: {r['Carrera_Mejor_Perfilada']}"
 
 def semaforo(r):
     diag = r['Diagnóstico Primario Vocacional']
-    if 'Información no aceptable' in diag:
+    if r['Coincidencia'] >= 0.75:
         return 'No aceptable'
-    elif 'Sin sugerencia clara' in diag or 'Sin sugerencia' in diag:
+    if 'Sin sugerencia' in diag:
         return 'Sin sugerencia'
-    elif diag == 'Perfil adecuado':
-        if r['Coincidencia_Ponderada'] == 'Coherente':
-            return 'Verde'
-        elif r['Coincidencia_Ponderada'] == 'Neutral':
-            return 'Amarillo'
-        elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
-            return 'Rojo'
-    elif 'Sugerencia:' in diag:
-        if r['Coincidencia_Ponderada'] == 'Coherente':
-            return 'Verde'
-        elif r['Coincidencia_Ponderada'] == 'Neutral':
-            return 'Amarillo'
-        elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
-            return 'Rojo'
+    if diag == 'Perfil adecuado':
+        return 'Verde' if r['Coincidencia_Ponderada']=='Coherente' else 'Amarillo'
+    if 'Sugerencia:' in diag:
+        return 'Verde' if r['Coincidencia_Ponderada']=='Coherente' else 'Amarillo'
     return 'Sin sugerencia'
 
-df['Carrera_Mejor_Perfilada'] = df.apply(carrera_mejor_v2, axis=1)
 df['Diagnóstico Primario Vocacional'] = df.apply(diagnostico_v2, axis=1)
-df['Semáforo Vocacional'] = df.apply(semaforo, axis=1)
+df['Semáforo Vocacional']            = df.apply(semaforo, axis=1)
 
 # ============================================
-# 🆕 Tarjeta de perfil esperado por carrera (UI opcional)
+# 🧭 Tarjeta de perfil fusionado por carrera
 # ============================================
-with st.expander("🧭 Perfil esperado por carrera (según documento)"):
-    sel_nombre = st.selectbox("Selecciona un estudiante para ver su perfil esperado y su resultado:", options=df[columna_nombre].tolist())
+with st.expander("🧭 Perfil esperado por carrera (fusión CHASIDE + documento)"):
+    sel_nombre = st.selectbox("Selecciona un estudiante:", options=df[columna_nombre].tolist())
     fila = df[df[columna_nombre] == sel_nombre].iloc[0]
     carrera_elegida = str(fila[columna_carrera]).strip()
-    key_norm = _norm(carrera_elegida)
+    fusion = perfil_carrera_fusionado(carrera_elegida)
 
     st.markdown(f"**Estudiante:** {sel_nombre}")
     st.markdown(f"**Carrera elegida:** {carrera_elegida}")
-    st.markdown(f"**Áreas top (ponderado):** {', '.join(fila['Top2_Areas'])}")
+    st.markdown(f"**Áreas Top (ponderado):** {', '.join(fila['Top2_Areas'])}")
     st.markdown(f"**Diagnóstico:** {fila['Diagnóstico Primario Vocacional']}  |  **Semáforo:** {fila['Semáforo Vocacional']}")
 
-    # mostrar perfil esperado si lo tenemos
-    perfil = perfil_carreras_norm.get(key_norm)
-    if perfil:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown("**Personalidad asociada**")
-            st.write(", ".join(perfil.get('Personalidad', [])))
-        with col2:
-            st.markdown("**Aptitudes esperadas**")
-            st.write(", ".join(perfil.get('Aptitudes', [])))
-        with col3:
-            st.markdown("**Intereses esperados**")
-            st.write(", ".join(perfil.get('Intereses', [])))
+    if fusion['Letras']:
+        c1,c2,c3 = st.columns(3)
+        with c1:
+            st.markdown("**Letras CHASIDE esperadas**")
+            st.write(", ".join(fusion['Letras']))
+        with c2:
+            st.markdown("**Aptitudes esperadas (fusionadas)**")
+            st.write(", ".join(fusion['Aptitudes']))
+        with c3:
+            st.markdown("**Intereses esperados (fusionados)**")
+            st.write(", ".join(fusion['Intereses']))
+        if fusion['Personalidad']:
+            st.markdown("**Personalidad asociada (documento)**")
+            st.write(", ".join(fusion['Personalidad']))
     else:
-        st.info("No tengo perfil enriquecido para esta carrera (aún).")
+        st.info("No tengo mapeo para esta carrera (aún).")
 
 # ============================================
 # 📌 EXPORTAR MULTI-HOJA
 # ============================================
-orden = {'Verde': 1, 'Amarillo': 2, 'Rojo': 3, 'Sin sugerencia': 4, 'No aceptable': 5}
+orden = {'Verde':1,'Amarillo':2,'Rojo':3,'Sin sugerencia':4,'No aceptable':5}
 df['Orden_Semaforo'] = df['Semáforo Vocacional'].map(orden).fillna(6)
 df = df.sort_values(by=['Orden_Semaforo']).reset_index(drop=True)
 
 cols_final = [
     columna_nombre, columna_carrera,
-    'Area_Fuerte_Intereses', 'Coincidencia_Intereses',
-    'Area_Fuerte_Aptitudes', 'Coincidencia_Aptitudes',
-    'Area_Fuerte_Total', 'Coincidencia_Ambos',
-    'Area_Fuerte_Ponderada', 'Coincidencia_Ponderada',
-    'Carrera_Mejor_Perfilada', 'Diagnóstico Primario Vocacional',
-    'Semáforo Vocacional'
+    'Area_Fuerte_Intereses','Area_Fuerte_Aptitudes','Area_Fuerte_Total',
+    'Area_Fuerte_Ponderada','Top2_Areas',
+    'Coincidencia_Ponderada','Carrera_Mejor_Perfilada',
+    'Diagnóstico Primario Vocacional','Semáforo Vocacional'
 ]
 
 df_final = df[cols_final]
 
 output = BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-    df_final[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
-    df_final[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
-    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
-    df_final[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
-    df_final[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
+    df_final[df['Semáforo Vocacional']=='Verde'].to_excel(writer, sheet_name='Verde', index=False)
+    df_final[df['Semáforo Vocacional']=='Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
+    df_final[df['Semáforo Vocacional']=='Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
+    df_final[df['Semáforo Vocacional']=='Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
+    df_final[df['Semáforo Vocacional']=='No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
 output.seek(0)
 
 st.download_button(
