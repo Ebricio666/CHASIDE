@@ -51,7 +51,20 @@ if columna_carrera not in df.columns or columna_nombre not in df.columns:
 df[columnas_items] = df[columnas_items].replace({
     'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0
 })
+# Forzar numérico en los ítems y manejar valores raros
+df[columnas_items] = (
+    df[columnas_items]
+    .apply(pd.to_numeric, errors='coerce')   # convierte "1", "0", vacíos, etc. a números o NaN
+    .fillna(0)                                # cualquier cosa no convertible → 0
+    .astype(int)                              # opcional: dejarlo como enteros 0/1
+)
 
+# === Vectorizar coincidencia sospechosa (sin apply) ===
+suma_si = df[columnas_items].sum(axis=1)                      # cuántos "Sí"
+total_resp = df[columnas_items].notna().sum(axis=1)           # cuántos ítems válidos
+porcentaje_si = np.where(total_resp == 0, 0, suma_si / total_resp)
+porcentaje_no = 1 - porcentaje_si
+df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)
 # ============================================
 # 📌 COINCIDENCIA SOSPECHOSA
 # ============================================
