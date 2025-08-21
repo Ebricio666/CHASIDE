@@ -52,7 +52,6 @@ if faltantes:
 # ============================================
 # 📌 CONVERSIÓN Sí/No → 1/0 (robusta)
 # ============================================
-# Copia de trabajo para evitar SettingWithCopy
 df_items = (
     df[columnas_items]
       .astype(str).apply(lambda col: col.str.strip().str.lower())
@@ -64,16 +63,13 @@ df_items = (
       .fillna(0)
       .astype(int)
 )
-
-# Sustituimos en df las columnas de ítems saneadas
 df[columnas_items] = df_items
 
 # ============================================
 # 📌 COINCIDENCIA SOSPECHOSA (vectorizado)
-#     Mide sesgo a contestar casi todo "Sí" o casi todo "No"
 # ============================================
-suma_si = df[columnas_items].sum(axis=1)                 # cuántos "Sí"
-total_items = len(columnas_items)                        # total de ítems (98)
+suma_si = df[columnas_items].sum(axis=1)
+total_items = len(columnas_items)  # 98
 porcentaje_si = np.where(total_items == 0, 0, suma_si / total_items)
 porcentaje_no = 1 - porcentaje_si
 df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)  # [0.5, 1.0]
@@ -83,7 +79,6 @@ df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)  # [0.5, 1.0]
 # ============================================
 areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
 
-# Ítems por área (números oficiales; 1-indexed en la hoja)
 intereses_items = {
     'C': [1, 12, 20, 53, 64, 71, 78, 85, 91, 98],
     'H': [9, 25, 34, 41, 56, 67, 74, 80, 89, 95],
@@ -104,12 +99,9 @@ aptitudes_items = {
     'E': [7, 55, 79, 94]
 }
 
-# Función para mapear número de ítem (1..98) a nombre de columna real
 def col_item(num: int) -> str:
-    # num-1 para convertir a 0-index; asumimos que columnas_items es exactamente la secuencia de 98 ítems
     return columnas_items[num - 1]
 
-# Sumas por área
 for area in areas:
     df[f'INTERES_{area}'] = df[[col_item(i) for i in intereses_items[area]]].sum(axis=1)
     df[f'APTITUD_{area}'] = df[[col_item(i) for i in aptitudes_items[area]]].sum(axis=1)
@@ -122,7 +114,6 @@ peso_intereses = st.slider("Peso de Intereses", min_value=0.0, max_value=1.0, va
 peso_aptitudes = 1.0 - peso_intereses
 st.caption(f"Ponderación actual → Intereses: **{peso_intereses:.2f}**, Aptitudes: **{peso_aptitudes:.2f}**")
 
-# Áreas fuertes (intereses, aptitudes, total simple, total ponderado)
 df['Area_Fuerte_Intereses'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1)
 df['Area_Fuerte_Aptitudes'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'APTITUD_{a}']), axis=1)
 df['Area_Fuerte_Total'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}'] + fila[f'APTITUD_{a}']), axis=1)
@@ -133,8 +124,7 @@ for area in areas:
 df['Area_Fuerte_Ponderada'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1)
 
 # ============================================
-# 📌 PERFILES DE CARRERAS (coherencia por áreas)
-#     'Baja' es opcional; si no existe, no se usa para penalizar.
+# 📌 PERFILES DE CARRERAS
 # ============================================
 perfil_carreras = {
     'Arquitectura': {'Fuerte': ['A', 'I', 'C']},
@@ -143,11 +133,10 @@ perfil_carreras = {
     'Ingeniería Ambiental': {'Fuerte': ['I', 'C', 'E']},
     'Ingeniería Bioquímica': {'Fuerte': ['I', 'C', 'E']},
     'Ingeniería en Gestión Empresarial': {'Fuerte': ['C', 'D', 'H']},
-    'Ingeniería Industrial': {'Fuerte': ['C', 'D', 'H']},
+    'Ingeniería Industrial': {'Fuerte': ['I', 'C', 'D', 'H']},
     'Ingeniería en Inteligencia Artificial': {'Fuerte': ['I', 'E']},
     'Ingeniería Mecatrónica': {'Fuerte': ['I', 'E']},
     'Ingeniería en Sistemas Computacionales': {'Fuerte': ['I', 'E']}
-    # Puedes agregar 'Baja': ['...'] para alguna carrera si deseas marcar áreas poco afines
 }
 
 def evaluar(area_chaside: str, carrera: str) -> str:
@@ -156,7 +145,7 @@ def evaluar(area_chaside: str, carrera: str) -> str:
     if not perfil:
         return 'Sin perfil definido'
     fuertes = perfil.get('Fuerte', [])
-    bajas = perfil.get('Baja', [])  # puede no existir
+    bajas = perfil.get('Baja', [])  # opcional
     if area_chaside in fuertes:
         return 'Coherente'
     if area_chaside in bajas:
@@ -172,12 +161,10 @@ df['Coincidencia_Ponderada'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Pondera
 # 📌 DIAGNÓSTICO Y SEMÁFORO
 # ============================================
 def carrera_mejor(r):
-    # Si la coincidencia es demasiado alta (sesgo), invalida la información
     if r['Coincidencia'] >= 0.75:
         return 'Información no aceptable'
     a = r['Area_Fuerte_Ponderada']
     c_actual = str(r[columna_carrera]).strip()
-    # Sugerir todas las carreras cuyo perfil fuerte incluya el área dominante
     sugeridas = [c for c, p in perfil_carreras.items() if a in p.get('Fuerte', [])]
     if c_actual in sugeridas:
         return c_actual
@@ -198,7 +185,6 @@ def semaforo(r):
         return 'No aceptable'
     if diag == 'Sin sugerencia clara':
         return 'Sin sugerencia'
-    # Mapear por calidad de coincidencia ponderada
     match = r['Coincidencia_Ponderada']
     if diag == 'Perfil adecuado':
         if match == 'Coherente':
@@ -243,7 +229,7 @@ output = BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
     df_final[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
     df_final[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
-    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Rojo', index=False)
+    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Requiere atención', index=False)  # nombre de hoja amigable
     df_final[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
     df_final[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
 output.seek(0)
@@ -257,3 +243,60 @@ st.download_button(
 
 st.subheader("🔍 Vista previa")
 st.dataframe(df_final, use_container_width=True)
+
+# ============================================
+# 📌 RESUMEN ESTADÍSTICO DESCRIPTIVO
+# ============================================
+st.header("📊 Resumen estadístico descriptivo")
+
+# Mapeo para mostrar 'Rojo' como 'Requiere atención'
+display_map = {
+    'Verde': 'Verde',
+    'Amarillo': 'Amarillo',
+    'Rojo': 'Requiere atención',
+    'Sin sugerencia': 'Sin sugerencia',
+    'No aceptable': 'No aceptable'
+}
+
+df_display = df_final.copy()
+df_display['Categoría'] = df_display['Semáforo Vocacional'].map(display_map).fillna(df_display['Semáforo Vocacional'])
+
+# Orden deseado para mostrar
+orden_cat = ['Verde', 'Amarillo', 'Requiere atención', 'Sin sugerencia', 'No aceptable']
+df_display['Categoría'] = pd.Categorical(df_display['Categoría'], categories=orden_cat, ordered=True)
+
+# 1) Conteo total por categoría
+resumen_categoria = (
+    df_display['Categoría']
+    .value_counts()
+    .reindex(orden_cat, fill_value=0)
+    .reset_index()
+)
+resumen_categoria.columns = ['Categoría', 'N° de estudiantes']
+
+st.subheader("Totales por categoría")
+st.table(resumen_categoria)
+
+# 2) Conteo por carrera dentro de cada categoría
+resumen_carrera = (
+    df_display
+    .groupby(['Categoría', columna_carrera], dropna=False)
+    .size()
+    .reset_index(name='N° de estudiantes')
+    .sort_values(by=['Categoría', 'N° de estudiantes'], ascending=[True, False])
+)
+
+st.subheader("Distribución por carrera dentro de cada categoría")
+st.dataframe(resumen_carrera, use_container_width=True)
+
+# (Opcional) Descargas de los resúmenes
+csv_resumen_categoria = resumen_categoria.to_csv(index=False).encode('utf-8')
+csv_resumen_carrera = resumen_carrera.to_csv(index=False).encode('utf-8')
+
+colA, colB = st.columns(2)
+with colA:
+    st.download_button("⬇️ Descargar totales por categoría (CSV)", data=csv_resumen_categoria,
+                       file_name="totales_por_categoria.csv", mime="text/csv")
+with colB:
+    st.download_button("⬇️ Descargar carreras por categoría (CSV)", data=csv_resumen_carrera,
+                       file_name="carreras_por_categoria.csv", mime="text/csv")
