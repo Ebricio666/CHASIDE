@@ -362,49 +362,21 @@ else:
 st.plotly_chart(fig, use_container_width=True)
 
 # ============================================
-# 📌 BOXPLOTS CON OUTLIERS POR CARRERA Y CATEGORÍA
+# 📌 BOXPLOTS Y LISTADO DE ALUMNOS DESTACADOS
 # ============================================
-st.header("📦 Boxplots con outliers por carrera")
+st.header("📦 Boxplots y detección de alumnos destacados")
 
-# 1) Score por alumno: máximo de PUNTAJE_COMBINADO_* (coincide con el área dominante ponderada)
+# Score máximo ponderado (ya calculado antes)
 score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in areas]
 df_scores = df.copy()
 df_scores['Score'] = df_scores[score_cols].max(axis=1)
 
-# Alinear con df_display (mismas filas/orden)
 df_display_scores = df_display.copy()
 df_display_scores['Score'] = df_scores['Score'].values
-df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values  # contexto
+df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values
 
-# Subconjuntos
-mask_verde = df_display_scores['Categoría'] == 'Verde'
-mask_amarillo = df_display_scores['Categoría'] == 'Amarillo'
-mask_resto = df_display_scores['Categoría'].isin(['Requiere atención', 'Sin sugerencia', 'No aceptable'])
-
-tabs = st.tabs(["Verde", "Amarillo", "Resto"])
-
-# --- Función con keys únicos para evitar StreamlitDuplicateElementId
-def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
-    if df_sub.empty:
-        st.info("No hay datos para esta categoría.")
-        return
-
-    fig_box = px.box(
-        df_sub,
-        x=columna_carrera,
-        y='Score',
-        points='outliers',
-        title=titulo
-    )
-    fig_box.update_layout(
-        xaxis_title="Carrera",
-        yaxis_title="Score ponderado (máximo por alumno)",
-        xaxis_tickangle=-30,
-        height=600
-    )
-    st.plotly_chart(fig_box, use_container_width=True, key=f"{key_prefix}_box")
-
-    # Detección de outliers por carrera (1.5 IQR)
+# --- Función auxiliar para obtener límites por carrera ---
+def calcular_limites(df_sub):
     def bounds(g):
         q1 = g['Score'].quantile(0.25)
         q3 = g['Score'].quantile(0.75)
@@ -412,56 +384,71 @@ def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
         lower = q1 - 1.5 * iqr
         upper = q3 + 1.5 * iqr
         return pd.Series({'Q1': q1, 'Q3': q3, 'IQR': iqr, 'Lower': lower, 'Upper': upper})
-
     limites = df_sub.groupby(columna_carrera, dropna=False).apply(bounds).reset_index()
-    df_sub = df_sub.merge(limites, on=columna_carrera, how='left')
-    df_out = df_sub[(df_sub['Score'] < df_sub['Lower']) | (df_sub['Score'] > df_sub['Upper'])].copy()
+    return df_sub.merge(limites, on=columna_carrera, how='left')
 
-    cols_tabla = [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']
+# ============================================
+# 🚀 ALTO POTENCIAL (Verde) – Outliers superiores y bigote superior
+# ============================================
+st.subheader("🚀 Alumnos de alto potencial (Categoría Verde)")
 
-    st.subheader("🔺 Outliers altos (mayor score)")
-    out_altos = df_out.sort_values('Score', ascending=False)[cols_tabla]
-    st.dataframe(out_altos, use_container_width=True, key=f"{key_prefix}_altos_df")
+verde_df = df_display_scores[df_display_scores['Categoría'] == 'Verde'].copy()
+if verde_df.empty:
+    st.info("No hay alumnos en categoría Verde.")
+else:
+    verde_df = calcular_limites(verde_df)
 
-    st.subheader("🔻 Outliers bajos (menor score)")
-    out_bajos = df_out.sort_values('Score', ascending=True)[cols_tabla]
-    st.dataframe(out_bajos, use_container_width=True, key=f"{key_prefix}_bajos_df")
+    # Outliers superiores
+    out_sup = verde_df[verde_df['Score'] > verde_df['Upper']]
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            "⬇️ Descargar outliers altos (CSV)",
-            data=out_altos.to_csv(index=False).encode('utf-8'),
-            file_name=f"outliers_altos_{key_prefix}.csv",
-            mime="text/csv",
-            key=f"{key_prefix}_dl_altos"
-        )
-    with col2:
-        st.download_button(
-            "⬇️ Descargar outliers bajos (CSV)",
-            data=out_bajos.to_csv(index=False).encode('utf-8'),
-            file_name=f"outliers_bajos_{key_prefix}.csv",
-            mime="text/csv",
-            key=f"{key_prefix}_dl_bajos"
-        )
+    # Alumnos en el bigote superior (los que están justo en 'Upper')
+    bigote_sup = verde_df[np.isclose(verde_df['Score'], verde_df['Upper'])]
 
-with tabs[0]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_verde, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categoría: Verde",
-        key_prefix="verde"
+    # Tabla consolidada
+    altos_potencial = pd.concat([out_sup, bigote_sup]).drop_duplicates()
+    cols_tabla = [columna_nombre, columna_carrera, 'Área fuerte', 'Score']
+    st.dataframe(altos_potencial[cols_tabla].sort_values('Score', ascending=False),
+                 use_container_width=True)
+
+    # Boxplot
+    fig_verde = px.box(
+        verde_df,
+        x=columna_carrera,
+        y='Score',
+        points='outliers',
+        title="Boxplot por carrera – Categoría Verde"
     )
+    st.plotly_chart(fig_verde, use_container_width=True)
 
-with tabs[1]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_amarillo, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categoría: Amarillo",
-        key_prefix="amarillo"
-    )
+# ============================================
+# ⚠️ RED FLAGS (Amarillo) – Outliers inferiores y bigote inferior
+# ============================================
+st.subheader("⚠️ Alumnos Red Flags (Categoría Amarillo)")
 
-with tabs[2]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_resto, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categorías: Requiere atención / Sin sugerencia / No aceptable",
-        key_prefix="resto"
+amarillo_df = df_display_scores[df_display_scores['Categoría'] == 'Amarillo'].copy()
+if amarillo_df.empty:
+    st.info("No hay alumnos en categoría Amarillo.")
+else:
+    amarillo_df = calcular_limites(amarillo_df)
+
+    # Outliers inferiores
+    out_inf = amarillo_df[amarillo_df['Score'] < amarillo_df['Lower']]
+
+    # Alumnos en el bigote inferior (los que están justo en 'Lower')
+    bigote_inf = amarillo_df[np.isclose(amarillo_df['Score'], amarillo_df['Lower'])]
+
+    # Tabla consolidada
+    red_flags = pd.concat([out_inf, bigote_inf]).drop_duplicates()
+    cols_tabla = [columna_nombre, columna_carrera, 'Área fuerte', 'Score']
+    st.dataframe(red_flags[cols_tabla].sort_values('Score', ascending=True),
+                 use_container_width=True)
+
+    # Boxplot
+    fig_amarillo = px.box(
+        amarillo_df,
+        x=columna_carrera,
+        y='Score',
+        points='outliers',
+        title="Boxplot por carrera – Categoría Amarillo"
     )
+    st.plotly_chart(fig_amarillo, use_container_width=True)
