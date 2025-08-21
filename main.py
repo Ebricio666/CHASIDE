@@ -361,29 +361,8 @@ else:
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ============================================
-# 📌 BOXPLOTS CON OUTLIERS POR CARRERA Y CATEGORÍA
-# ============================================
-st.header("📦 Boxplots con outliers por carrera")
-
-# 1) Score por alumno: máximo de PUNTAJE_COMBINADO_* (coincide con el área dominante ponderada)
-score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in areas]
-df_scores = df.copy()
-df_scores['Score'] = df_scores[score_cols].max(axis=1)
-
-# Alinear con df_display (mismas filas/orden)
-df_display_scores = df_display.copy()
-df_display_scores['Score'] = df_scores['Score'].values
-df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values  # por contexto en tablas
-
-# 2) Definir subconjuntos por categoría
-mask_verde = df_display_scores['Categoría'] == 'Verde'
-mask_amarillo = df_display_scores['Categoría'] == 'Amarillo'
-mask_resto = df_display_scores['Categoría'].isin(['Requiere atención', 'Sin sugerencia', 'No aceptable'])
-
-tabs = st.tabs(["Verde", "Amarillo", "Resto"])
-
-def plot_box_and_outliers(df_sub, titulo):
+# --- Pega esto EN LUGAR de tu función plot_box_and_outliers actual ---
+def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
     import plotly.express as px
 
     if df_sub.empty:
@@ -404,7 +383,7 @@ def plot_box_and_outliers(df_sub, titulo):
         xaxis_tickangle=-30,
         height=600
     )
-    st.plotly_chart(fig_box, use_container_width=True)
+    st.plotly_chart(fig_box, use_container_width=True, key=f"{key_prefix}_box")
 
     # --- Detección de outliers por carrera (regla 1.5 * IQR)
     def bounds(g):
@@ -419,48 +398,31 @@ def plot_box_and_outliers(df_sub, titulo):
     df_sub = df_sub.merge(limites, on=columna_carrera, how='left')
     df_out = df_sub[(df_sub['Score'] < df_sub['Lower']) | (df_sub['Score'] > df_sub['Upper'])].copy()
 
-    # Tablas de outliers altos y bajos
     cols_tabla = [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']
-    out_altos = df_out.sort_values('Score', ascending=False)[cols_tabla]
-    out_bajos = df_out.sort_values('Score', ascending=True)[cols_tabla]
 
     st.subheader("🔺 Outliers altos (mayor score)")
-    st.dataframe(out_altos, use_container_width=True)
+    out_altos = df_out.sort_values('Score', ascending=False)[cols_tabla]
+    st.dataframe(out_altos, use_container_width=True, key=f"{key_prefix}_altos_df")
 
     st.subheader("🔻 Outliers bajos (menor score)")
-    st.dataframe(out_bajos, use_container_width=True)
+    out_bajos = df_out.sort_values('Score', ascending=True)[cols_tabla]
+    st.dataframe(out_bajos, use_container_width=True, key=f"{key_prefix}_bajos_df")
 
-    # Descarga CSV
+    # Descarga CSV con keys únicos
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
             "⬇️ Descargar outliers altos (CSV)",
             data=out_altos.to_csv(index=False).encode('utf-8'),
-            file_name="outliers_altos.csv",
-            mime="text/csv"
+            file_name=f"outliers_altos_{key_prefix}.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_dl_altos"
         )
     with col2:
         st.download_button(
             "⬇️ Descargar outliers bajos (CSV)",
             data=out_bajos.to_csv(index=False).encode('utf-8'),
-            file_name="outliers_bajos.csv",
-            mime="text/csv"
+            file_name=f"outliers_bajos_{key_prefix}.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_dl_bajos"
         )
-
-with tabs[0]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_verde, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categoría: Verde"
-    )
-
-with tabs[1]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_amarillo, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categoría: Amarillo"
-    )
-
-with tabs[2]:
-    plot_box_and_outliers(
-        df_display_scores.loc[mask_resto, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
-        "Boxplot por carrera – Categorías: Requiere atención / Sin sugerencia / No aceptable"
-    )
