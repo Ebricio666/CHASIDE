@@ -452,3 +452,69 @@ else:
         title="Boxplot por carrera – Categoría Amarillo"
     )
     st.plotly_chart(fig_amarillo, use_container_width=True)
+
+# ============================================
+# 📌 TOP 5 VERDE (alto potencial) Y BOTTOM 5 AMARILLO (red flags)
+# ============================================
+st.header("📊 Ranking de alumnos por categoría")
+
+# Reusar Score máximo ponderado
+score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in areas]
+df_scores = df.copy()
+df_scores['Score'] = df_scores[score_cols].max(axis=1)
+
+df_display_scores = df_display.copy()
+df_display_scores['Score'] = df_scores['Score'].values
+df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values
+
+# --- Función auxiliar para extraer top/bottom 5 por carrera ---
+def top_bottom(df_sub, n=5, asc=False):
+    resultados = []
+    for carrera, g in df_sub.groupby(columna_carrera):
+        g_sorted = g.sort_values('Score', ascending=asc).head(n)
+        resultados.append(g_sorted.assign(Carrera=carrera))
+    if resultados:
+        return pd.concat(resultados)
+    return pd.DataFrame(columns=[columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score'])
+
+# ============================================
+# 🚀 Verde → Top 5 mejores por carrera
+# ============================================
+st.subheader("🚀 Alumnos de alto potencial (Top 5 Verde por carrera)")
+
+verde_df = df_display_scores[df_display_scores['Categoría'] == 'Verde']
+if verde_df.empty:
+    st.info("No hay alumnos en categoría Verde.")
+else:
+    top5_verde = top_bottom(verde_df, n=5, asc=False)
+    cols_tabla = [columna_nombre, columna_carrera, 'Área fuerte', 'Score']
+    st.dataframe(top5_verde[cols_tabla].sort_values([columna_carrera, 'Score'], ascending=[True, False]),
+                 use_container_width=True)
+
+    st.download_button(
+        "⬇️ Descargar Top 5 Verde por carrera (CSV)",
+        data=top5_verde[cols_tabla].to_csv(index=False).encode('utf-8'),
+        file_name="top5_verde_por_carrera.csv",
+        mime="text/csv"
+    )
+
+# ============================================
+# ⚠️ Amarillo → Bottom 5 peores por carrera
+# ============================================
+st.subheader("⚠️ Alumnos Red Flags (Bottom 5 Amarillo por carrera)")
+
+amarillo_df = df_display_scores[df_display_scores['Categoría'] == 'Amarillo']
+if amarillo_df.empty:
+    st.info("No hay alumnos en categoría Amarillo.")
+else:
+    bottom5_amarillo = top_bottom(amarillo_df, n=5, asc=True)
+    cols_tabla = [columna_nombre, columna_carrera, 'Área fuerte', 'Score']
+    st.dataframe(bottom5_amarillo[cols_tabla].sort_values([columna_carrera, 'Score'], ascending=[True, True]),
+                 use_container_width=True)
+
+    st.download_button(
+        "⬇️ Descargar Bottom 5 Amarillo por carrera (CSV)",
+        data=bottom5_amarillo[cols_tabla].to_csv(index=False).encode('utf-8'),
+        file_name="bottom5_amarillo_por_carrera.csv",
+        mime="text/csv"
+    )
