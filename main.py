@@ -5,7 +5,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-import matplotlib.pyplot as plt
+import plotly.express as px
 
 # ============================================
 # 📌 CONFIGURACIÓN INICIAL
@@ -29,7 +29,6 @@ st.caption(
 # 📌 LECTURA DESDE GOOGLE SHEETS (como CSV)
 # ============================================
 url = "https://docs.google.com/spreadsheets/d/1BNAeOSj2F378vcJE5-T8iJ8hvoseOleOHr-I7mVfYu4/export?format=csv"
-
 df = pd.read_csv(url)
 st.success("✅ Datos cargados correctamente desde Google Sheets")
 st.dataframe(df.head())
@@ -307,9 +306,15 @@ with colB:
                        file_name="carreras_por_categoria.csv", mime="text/csv")
 
 # ============================================
-# 📌 DIAGRAMA DE BARRAS APILADO (100%) POR CARRERA
+# 📌 BARRAS APILADAS POR CARRERA (ABSOLUTO vs 100%)
 # ============================================
-st.header("📊 Distribución proporcional por carrera (100% apilado)")
+st.header("📊 Distribución por carrera y categoría")
+
+modo = st.radio(
+    "Modo de visualización",
+    options=["Valores absolutos", "Proporción (100% apilado)"],
+    horizontal=True
+)
 
 stacked_data = (
     df_display
@@ -318,30 +323,40 @@ stacked_data = (
     .reset_index(name='N° de estudiantes')
 )
 
-# Pivot para gráfico apilado
-pivot_data = stacked_data.pivot(index=columna_carrera, columns='Categoría', values='N° de estudiantes').fillna(0)
+if modo == "Valores absolutos":
+    y_col = 'N° de estudiantes'
+    title = "Estudiantes por carrera y categoría (valores absolutos)"
+    fig = px.bar(
+        stacked_data,
+        x=columna_carrera,
+        y=y_col,
+        color='Categoría',
+        category_orders={'Categoría': orden_cat},
+        barmode='stack',
+        title=title,
+        text='N° de estudiantes'
+    )
+    fig.update_traces(textposition='inside', cliponaxis=False)
+    fig.update_layout(yaxis_title="Número de estudiantes", xaxis_title="Carrera", xaxis_tickangle=-30, height=620)
 
-# Convertir a % por carrera
-pivot_percent = pivot_data.div(pivot_data.sum(axis=1), axis=0) * 100
+else:
+    # Calcular porcentaje por carrera
+    stacked_data['%'] = (
+        stacked_data.groupby(columna_carrera)['N° de estudiantes']
+        .transform(lambda x: np.where(x.sum()==0, 0, x / x.sum() * 100))
+    )
+    title = "Proporción (%) de estudiantes por carrera y categoría (100% apilado)"
+    fig = px.bar(
+        stacked_data,
+        x=columna_carrera,
+        y='%',
+        color='Categoría',
+        category_orders={'Categoría': orden_cat},
+        barmode='stack',
+        title=title,
+        text=stacked_data['%'].round(1).astype(str) + "%"
+    )
+    fig.update_traces(textposition='inside', cliponaxis=False)
+    fig.update_layout(yaxis_title="Proporción (%)", xaxis_title="Carrera", xaxis_tickangle=-30, height=620)
 
-# Ordenar columnas por orden_cat (si faltan categorías, reindexa con fillna)
-pivot_percent = pivot_percent.reindex(columns=orden_cat, fill_value=0)
-
-# Plot con matplotlib (apilado 100%)
-fig, ax = plt.subplots(figsize=(10, 6))
-bottom = np.zeros(len(pivot_percent))
-x = np.arange(len(pivot_percent.index))
-
-for cat in orden_cat:
-    vals = pivot_percent[cat].values
-    ax.bar(x, vals, bottom=bottom, label=cat)
-    bottom += vals
-
-ax.set_ylabel("Proporción (%)")
-ax.set_title("Proporción (%) de estudiantes por carrera y categoría")
-ax.set_xticks(x)
-ax.set_xticklabels(pivot_percent.index, rotation=30, ha='right')
-ax.legend(title="Categoría", bbox_to_anchor=(1.02, 1), loc='upper left')
-ax.set_ylim(0, 100)
-
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
