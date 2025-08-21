@@ -300,3 +300,39 @@ with colA:
 with colB:
     st.download_button("⬇️ Descargar carreras por categoría (CSV)", data=csv_resumen_carrera,
                        file_name="carreras_por_categoria.csv", mime="text/csv")
+
+# ============================================
+# 📌 DIAGRAMA DE BARRAS APILADO POR CARRERA
+# ============================================
+import plotly.express as px
+
+st.header("📊 Distribución de categorías por carrera (barras apiladas)")
+
+# Usamos df_display (ya tiene Categoría con 'Requiere atención')
+stacked_data = (
+    df_display
+    .groupby([columna_carrera, 'Categoría'])
+    .size()
+    .reset_index(name='N° de estudiantes')
+)
+
+fig = px.bar(
+    stacked_data,
+    x=columna_carrera,
+    y='N° de estudiantes',
+    color='Categoría',
+    category_orders={'Categoría': orden_cat},
+    title="Proporción de estudiantes por carrera y categoría",
+    barmode='stack'
+)
+
+fig.update_layout(
+    xaxis_title="Carrera",
+    yaxis_title="Número de estudiantes",
+    legend_title="Categoría",
+    xaxis_tickangle=-30,
+    bargap=0.2,
+    height=600
+)
+
+st.plotly_chart(fig, use_container_width=True)
