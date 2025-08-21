@@ -302,13 +302,12 @@ with colB:
                        file_name="carreras_por_categoria.csv", mime="text/csv")
 
 # ============================================
-# 📌 DIAGRAMA DE BARRAS APILADO POR CARRERA
+# 📌 DIAGRAMA DE BARRAS APILADO (100%)
 # ============================================
 import plotly.express as px
 
-st.header("📊 Distribución de categorías por carrera (barras apiladas)")
+st.header("📊 Distribución proporcional por carrera (100% apilado)")
 
-# Usamos df_display (ya tiene Categoría con 'Requiere atención')
 stacked_data = (
     df_display
     .groupby([columna_carrera, 'Categoría'])
@@ -316,19 +315,26 @@ stacked_data = (
     .reset_index(name='N° de estudiantes')
 )
 
+# Calcular porcentajes dentro de cada carrera
+stacked_data['%'] = (
+    stacked_data.groupby(columna_carrera)['N° de estudiantes']
+    .transform(lambda x: x / x.sum() * 100)
+)
+
 fig = px.bar(
     stacked_data,
     x=columna_carrera,
-    y='N° de estudiantes',
+    y='%',
     color='Categoría',
     category_orders={'Categoría': orden_cat},
-    title="Proporción de estudiantes por carrera y categoría",
-    barmode='stack'
+    title="Proporción (%) de estudiantes por carrera y categoría",
+    barmode='stack',
+    text=stacked_data['%'].round(1).astype(str) + "%"
 )
 
 fig.update_layout(
     xaxis_title="Carrera",
-    yaxis_title="Número de estudiantes",
+    yaxis_title="Proporción (%)",
     legend_title="Categoría",
     xaxis_tickangle=-30,
     bargap=0.2,
