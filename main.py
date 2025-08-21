@@ -18,6 +18,10 @@ st.markdown("""
 **Elaborado por:** Dra. Elena Elsa Bricio Barrios, Dr. Santiago Arceo-Díaz y Psicóloga Martha Cecilia Ramírez Guzmán
 """)
 
+st.caption("Esta herramienta procesa respuestas de la escala CHASIDE, calcula puntajes por área (Intereses/Aptitudes), "
+           "aplica una ponderación configurable (por defecto 80% Intereses, 20% Aptitudes), "
+           "y genera un semáforo de coherencia con la carrera deseada.")
+
 # ============================================
 # 📌 LECTURA DESDE GOOGLE SHEETS (como CSV)
 # ============================================
@@ -30,62 +34,56 @@ st.dataframe(df.head())
 # ============================================
 # 📌 SELECCIÓN DE COLUMNAS
 # ============================================
-
-# Posiciones: F a CV = columnas 5 a 103 en base 0
+# Posiciones: F a CV = columnas 5 a 103 en base 0 → 98 ítems
 columnas_items = df.columns[5:103]
 
-# Asegúrate de que las columnas clave existan
+# Nombres exactos esperados (alineados con el formulario)
 columna_carrera = '¿A qué carrera desea ingresar?'
 columna_nombre = 'Ingrese su nombre completo'
 
 # Validación de columnas
 st.write("Columnas detectadas:", df.columns.tolist())
-
-if columna_carrera not in df.columns or columna_nombre not in df.columns:
-    st.error("❌ Revisa que 'Carrera a ingresar' y 'Nombre del estudiante' existan en tu archivo.")
+faltantes = [c for c in [columna_carrera, columna_nombre] if c not in df.columns]
+if faltantes:
+    st.error(f"❌ Faltan columnas requeridas en tu archivo: {faltantes}. "
+             f"Verifica que existan exactamente '{columna_carrera}' y '{columna_nombre}'.")
     st.stop()
 
 # ============================================
-# 📌 CONVERSIÓN Sí/No a 1/0
+# 📌 CONVERSIÓN Sí/No → 1/0 (robusta)
 # ============================================
-df[columnas_items] = df[columnas_items].replace({
-    'Sí': 1, 'Si': 1, 'si': 1, 'No': 0, 'no': 0
-})
-# Forzar numérico en los ítems y manejar valores raros
-df[columnas_items] = (
+# Copia de trabajo para evitar SettingWithCopy
+df_items = (
     df[columnas_items]
-    .apply(pd.to_numeric, errors='coerce')   # convierte "1", "0", vacíos, etc. a números o NaN
-    .fillna(0)                                # cualquier cosa no convertible → 0
-    .astype(int)                              # opcional: dejarlo como enteros 0/1
+      .astype(str).apply(lambda col: col.str.strip().str.lower())
+      .replace({
+          'sí': 1, 'si': 1, 's': 1, '1': 1, 'true': 1, 'verdadero': 1, 'x': 1,
+          'no': 0, 'n': 0, '0': 0, 'false': 0, 'falso': 0, '': 0, 'nan': 0
+      })
+      .apply(pd.to_numeric, errors='coerce')
+      .fillna(0)
+      .astype(int)
 )
 
-# === Vectorizar coincidencia sospechosa (sin apply) ===
-suma_si = df[columnas_items].sum(axis=1)                      # cuántos "Sí"
-total_resp = df[columnas_items].notna().sum(axis=1)           # cuántos ítems válidos
-porcentaje_si = np.where(total_resp == 0, 0, suma_si / total_resp)
+# Sustituimos en df las columnas de ítems saneadas
+df[columnas_items] = df_items
+
+# ============================================
+# 📌 COINCIDENCIA SOSPECHOSA (vectorizado)
+#     Mide sesgo a contestar casi todo "Sí" o casi todo "No"
+# ============================================
+suma_si = df[columnas_items].sum(axis=1)                 # cuántos "Sí"
+total_items = len(columnas_items)                        # total de ítems (98)
+porcentaje_si = np.where(total_items == 0, 0, suma_si / total_items)
 porcentaje_no = 1 - porcentaje_si
-df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)
-# ============================================
-# 📌 COINCIDENCIA SOSPECHOSA
-# ============================================
-def calcular_coincidencia(fila):
-    valores = fila[columnas_items].values
-    suma = valores.sum()
-    total = len(valores)
-    if total == 0:
-        return 0
-    porcentaje_si = suma / total
-    porcentaje_no = 1 - porcentaje_si
-    return max(porcentaje_si, porcentaje_no)
-
-df['Coincidencia'] = df.apply(calcular_coincidencia, axis=1)
+df['Coincidencia'] = np.maximum(porcentaje_si, porcentaje_no)  # [0.5, 1.0]
 
 # ============================================
-# 📌 SUMA INTERESES Y APTITUDES
+# 📌 MAPEO DE ÍTEMS A ÁREAS (Intereses/Aptitudes)
 # ============================================
 areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
 
-# Mapear ítems a columnas por posición F a CV
+# Ítems por área (números oficiales; 1-indexed en la hoja)
 intereses_items = {
     'C': [1, 12, 20, 53, 64, 71, 78, 85, 91, 98],
     'H': [9, 25, 34, 41, 56, 67, 74, 80, 89, 95],
@@ -106,59 +104,64 @@ aptitudes_items = {
     'E': [7, 55, 79, 94]
 }
 
-# Función para mapear número de ítem a columna real
-def col_item(num):
+# Función para mapear número de ítem (1..98) a nombre de columna real
+def col_item(num: int) -> str:
+    # num-1 para convertir a 0-index; asumimos que columnas_items es exactamente la secuencia de 98 ítems
     return columnas_items[num - 1]
 
-for area, items in intereses_items.items():
-    df[f'INTERES_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
-
-for area, items in aptitudes_items.items():
-    df[f'APTITUD_{area}'] = df[[col_item(i) for i in items]].sum(axis=1)
+# Sumas por área
+for area in areas:
+    df[f'INTERES_{area}'] = df[[col_item(i) for i in intereses_items[area]]].sum(axis=1)
+    df[f'APTITUD_{area}'] = df[[col_item(i) for i in aptitudes_items[area]]].sum(axis=1)
 
 # ============================================
-# 📌 ÁREAS FUERTES Y PONDERADAS
+# 📌 PONDERACIÓN (ajustable desde la UI)
 # ============================================
+st.subheader("⚖️ Ponderación de Intereses vs Aptitudes")
+peso_intereses = st.slider("Peso de Intereses", min_value=0.0, max_value=1.0, value=0.8, step=0.05)
+peso_aptitudes = 1.0 - peso_intereses
+st.caption(f"Ponderación actual → Intereses: **{peso_intereses:.2f}**, Aptitudes: **{peso_aptitudes:.2f}**")
+
+# Áreas fuertes (intereses, aptitudes, total simple, total ponderado)
 df['Area_Fuerte_Intereses'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}']), axis=1)
 df['Area_Fuerte_Aptitudes'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'APTITUD_{a}']), axis=1)
 df['Area_Fuerte_Total'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'INTERES_{a}'] + fila[f'APTITUD_{a}']), axis=1)
 
-peso_intereses = 0.8
-peso_aptitudes = 0.2
-
 for area in areas:
-    df[f'PUNTAJE_COMBINADO_{area}'] = (
-        df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
-    )
+    df[f'PUNTAJE_COMBINADO_{area}'] = df[f'INTERES_{area}'] * peso_intereses + df[f'APTITUD_{area}'] * peso_aptitudes
 
 df['Area_Fuerte_Ponderada'] = df.apply(lambda fila: max(areas, key=lambda a: fila[f'PUNTAJE_COMBINADO_{a}']), axis=1)
 
 # ============================================
-# 📌 EVALUACIÓN DE COHERENCIA
+# 📌 PERFILES DE CARRERAS (coherencia por áreas)
+#     'Baja' es opcional; si no existe, no se usa para penalizar.
 # ============================================
 perfil_carreras = {
-    'Arquitectura': {'Fuerte': ['A', 'I'], 'Baja': ['E']},
-    'Contador Público': {'Fuerte': ['C', 'H'], 'Baja': ['D']},
-    'Licenciatura en Administración': {'Fuerte': ['C', 'H'], 'Baja': ['D']},
-    'Ingeniería Ambiental': {'Fuerte': ['E', 'I'], 'Baja': ['A']},
-    'Ingeniería Bioquímica': {'Fuerte': ['E', 'I'], 'Baja': ['A', 'S']},
-    'Ingeniería en Gestión Empresarial': {'Fuerte': ['C', 'I'], 'Baja': ['A']},
-    'Ingeniería Industrial': {'Fuerte': ['I', 'C'], 'Baja': ['A']},
-    'Ingeniería en Inteligencia Artificial': {'Fuerte': ['I', 'E'], 'Baja': ['H']},
-    'Ingeniería Mecatrónica': {'Fuerte': ['I', 'E'], 'Baja': ['H']},
-    'Ingeniería en Sistemas Computacionales': {'Fuerte': ['I', 'E'], 'Baja': ['H']}
+    'Arquitectura': {'Fuerte': ['A', 'I', 'C']},
+    'Contador Público': {'Fuerte': ['C', 'D']},
+    'Licenciatura en Administración': {'Fuerte': ['C', 'D']},
+    'Ingeniería Ambiental': {'Fuerte': ['I', 'C', 'E']},
+    'Ingeniería Bioquímica': {'Fuerte': ['I', 'C', 'E']},
+    'Ingeniería en Gestión Empresarial': {'Fuerte': ['C', 'D', 'H']},
+    'Ingeniería Industrial': {'Fuerte': ['C', 'D', 'H']},
+    'Ingeniería en Inteligencia Artificial': {'Fuerte': ['I', 'E']},
+    'Ingeniería Mecatrónica': {'Fuerte': ['I', 'E']},
+    'Ingeniería en Sistemas Computacionales': {'Fuerte': ['I', 'E']}
+    # Puedes agregar 'Baja': ['...'] para alguna carrera si deseas marcar áreas poco afines
 }
 
-def evaluar(area, carrera):
-    perfil = perfil_carreras.get(str(carrera).strip())
-    if perfil:
-        if area in perfil['Fuerte']:
-            return 'Coherente'
-        elif area in perfil['Baja']:
-            return 'Requiere Orientación'
-        else:
-            return 'Neutral'
-    return 'Sin perfil definido'
+def evaluar(area_chaside: str, carrera: str) -> str:
+    carrera = str(carrera).strip()
+    perfil = perfil_carreras.get(carrera)
+    if not perfil:
+        return 'Sin perfil definido'
+    fuertes = perfil.get('Fuerte', [])
+    bajas = perfil.get('Baja', [])  # puede no existir
+    if area_chaside in fuertes:
+        return 'Coherente'
+    if area_chaside in bajas:
+        return 'Requiere Orientación'
+    return 'Neutral'
 
 df['Coincidencia_Intereses'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Intereses'], r[columna_carrera]), axis=1)
 df['Coincidencia_Aptitudes'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Aptitudes'], r[columna_carrera]), axis=1)
@@ -169,40 +172,47 @@ df['Coincidencia_Ponderada'] = df.apply(lambda r: evaluar(r['Area_Fuerte_Pondera
 # 📌 DIAGNÓSTICO Y SEMÁFORO
 # ============================================
 def carrera_mejor(r):
+    # Si la coincidencia es demasiado alta (sesgo), invalida la información
     if r['Coincidencia'] >= 0.75:
         return 'Información no aceptable'
     a = r['Area_Fuerte_Ponderada']
     c_actual = str(r[columna_carrera]).strip()
-    s = [c for c, p in perfil_carreras.items() if a in p['Fuerte']]
-    return c_actual if c_actual in s else ', '.join(s) if s else 'Sin sugerencia clara'
+    # Sugerir todas las carreras cuyo perfil fuerte incluya el área dominante
+    sugeridas = [c for c, p in perfil_carreras.items() if a in p.get('Fuerte', [])]
+    if c_actual in sugeridas:
+        return c_actual
+    return ', '.join(sugeridas) if sugeridas else 'Sin sugerencia clara'
 
 def diagnostico(r):
     if r['Carrera_Mejor_Perfilada'] == 'Información no aceptable':
         return 'Información no aceptable'
     if str(r[columna_carrera]).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
         return 'Perfil adecuado'
-    else:
-        return f"Sugerencia: {r['Carrera_Mejor_Perfilada']}"
+    if r['Carrera_Mejor_Perfilada'] == 'Sin sugerencia clara':
+        return 'Sin sugerencia clara'
+    return f"Sugerencia: {r['Carrera_Mejor_Perfilada']}"
 
 def semaforo(r):
     diag = r['Diagnóstico Primario Vocacional']
-    if 'Información no aceptable' in diag:
+    if diag == 'Información no aceptable':
         return 'No aceptable'
-    elif 'Sin sugerencia clara' in diag:
+    if diag == 'Sin sugerencia clara':
         return 'Sin sugerencia'
-    elif diag == 'Perfil adecuado':
-        if r['Coincidencia_Ponderada'] == 'Coherente':
+    # Mapear por calidad de coincidencia ponderada
+    match = r['Coincidencia_Ponderada']
+    if diag == 'Perfil adecuado':
+        if match == 'Coherente':
             return 'Verde'
-        elif r['Coincidencia_Ponderada'] == 'Neutral':
+        if match == 'Neutral':
             return 'Amarillo'
-        elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
+        if match == 'Requiere Orientación':
             return 'Rojo'
-    elif 'Sugerencia:' in diag:
-        if r['Coincidencia_Ponderada'] == 'Coherente':
+    if diag.startswith('Sugerencia:'):
+        if match == 'Coherente':
             return 'Verde'
-        elif r['Coincidencia_Ponderada'] == 'Neutral':
+        if match == 'Neutral':
             return 'Amarillo'
-        elif r['Coincidencia_Ponderada'] == 'Requiere Orientación':
+        if match == 'Requiere Orientación':
             return 'Rojo'
     return 'Sin sugerencia'
 
@@ -246,4 +256,4 @@ st.download_button(
 )
 
 st.subheader("🔍 Vista previa")
-st.dataframe(df_final)
+st.dataframe(df_final, use_container_width=True)
