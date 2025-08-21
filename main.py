@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
+import matplotlib.pyplot as plt
 
 # ============================================
 # 📌 CONFIGURACIÓN INICIAL
@@ -18,9 +19,11 @@ st.markdown("""
 **Elaborado por:** Dra. Elena Elsa Bricio Barrios, Dr. Santiago Arceo-Díaz y Psicóloga Martha Cecilia Ramírez Guzmán
 """)
 
-st.caption("Esta herramienta procesa respuestas de la escala CHASIDE, calcula puntajes por área (Intereses/Aptitudes), "
-           "aplica una ponderación configurable (por defecto 80% Intereses, 20% Aptitudes), "
-           "y genera un semáforo de coherencia con la carrera deseada.")
+st.caption(
+    "Esta herramienta procesa respuestas de la escala CHASIDE, calcula puntajes por área (Intereses/Aptitudes), "
+    "aplica una ponderación configurable (por defecto 80% Intereses, 20% Aptitudes), "
+    "y genera un semáforo de coherencia con la carrera deseada."
+)
 
 # ============================================
 # 📌 LECTURA DESDE GOOGLE SHEETS (como CSV)
@@ -45,8 +48,10 @@ columna_nombre = 'Ingrese su nombre completo'
 st.write("Columnas detectadas:", df.columns.tolist())
 faltantes = [c for c in [columna_carrera, columna_nombre] if c not in df.columns]
 if faltantes:
-    st.error(f"❌ Faltan columnas requeridas en tu archivo: {faltantes}. "
-             f"Verifica que existan exactamente '{columna_carrera}' y '{columna_nombre}'.")
+    st.error(
+        f"❌ Faltan columnas requeridas en tu archivo: {faltantes}. "
+        f"Verifica que existan exactamente '{columna_carrera}' y '{columna_nombre}'."
+    )
     st.stop()
 
 # ============================================
@@ -229,7 +234,7 @@ output = BytesIO()
 with pd.ExcelWriter(output, engine='openpyxl') as writer:
     df_final[df['Semáforo Vocacional'] == 'Verde'].to_excel(writer, sheet_name='Verde', index=False)
     df_final[df['Semáforo Vocacional'] == 'Amarillo'].to_excel(writer, sheet_name='Amarillo', index=False)
-    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Requiere atención', index=False)  # nombre de hoja amigable
+    df_final[df['Semáforo Vocacional'] == 'Rojo'].to_excel(writer, sheet_name='Requiere atención', index=False)
     df_final[df['Semáforo Vocacional'] == 'Sin sugerencia'].to_excel(writer, sheet_name='Sin sugerencia', index=False)
     df_final[df['Semáforo Vocacional'] == 'No aceptable'].to_excel(writer, sheet_name='No aceptable', index=False)
 output.seek(0)
@@ -265,7 +270,7 @@ df_display['Categoría'] = df_display['Semáforo Vocacional'].map(display_map).f
 orden_cat = ['Verde', 'Amarillo', 'Requiere atención', 'Sin sugerencia', 'No aceptable']
 df_display['Categoría'] = pd.Categorical(df_display['Categoría'], categories=orden_cat, ordered=True)
 
-# 1) Conteo total por categoría
+# 1) Totales por categoría
 resumen_categoria = (
     df_display['Categoría']
     .value_counts()
@@ -289,7 +294,7 @@ resumen_carrera = (
 st.subheader("Distribución por carrera dentro de cada categoría")
 st.dataframe(resumen_carrera, use_container_width=True)
 
-# (Opcional) Descargas de los resúmenes
+# Descargas de los resúmenes
 csv_resumen_categoria = resumen_categoria.to_csv(index=False).encode('utf-8')
 csv_resumen_carrera = resumen_carrera.to_csv(index=False).encode('utf-8')
 
@@ -302,10 +307,8 @@ with colB:
                        file_name="carreras_por_categoria.csv", mime="text/csv")
 
 # ============================================
-# 📌 DIAGRAMA DE BARRAS APILADO (100%)
+# 📌 DIAGRAMA DE BARRAS APILADO (100%) POR CARRERA
 # ============================================
-import plotly.express as px
-
 st.header("📊 Distribución proporcional por carrera (100% apilado)")
 
 stacked_data = (
@@ -315,30 +318,30 @@ stacked_data = (
     .reset_index(name='N° de estudiantes')
 )
 
-# Calcular porcentajes dentro de cada carrera
-stacked_data['%'] = (
-    stacked_data.groupby(columna_carrera)['N° de estudiantes']
-    .transform(lambda x: x / x.sum() * 100)
-)
+# Pivot para gráfico apilado
+pivot_data = stacked_data.pivot(index=columna_carrera, columns='Categoría', values='N° de estudiantes').fillna(0)
 
-fig = px.bar(
-    stacked_data,
-    x=columna_carrera,
-    y='%',
-    color='Categoría',
-    category_orders={'Categoría': orden_cat},
-    title="Proporción (%) de estudiantes por carrera y categoría",
-    barmode='stack',
-    text=stacked_data['%'].round(1).astype(str) + "%"
-)
+# Convertir a % por carrera
+pivot_percent = pivot_data.div(pivot_data.sum(axis=1), axis=0) * 100
 
-fig.update_layout(
-    xaxis_title="Carrera",
-    yaxis_title="Proporción (%)",
-    legend_title="Categoría",
-    xaxis_tickangle=-30,
-    bargap=0.2,
-    height=600
-)
+# Ordenar columnas por orden_cat (si faltan categorías, reindexa con fillna)
+pivot_percent = pivot_percent.reindex(columns=orden_cat, fill_value=0)
 
-st.plotly_chart(fig, use_container_width=True)
+# Plot con matplotlib (apilado 100%)
+fig, ax = plt.subplots(figsize=(10, 6))
+bottom = np.zeros(len(pivot_percent))
+x = np.arange(len(pivot_percent.index))
+
+for cat in orden_cat:
+    vals = pivot_percent[cat].values
+    ax.bar(x, vals, bottom=bottom, label=cat)
+    bottom += vals
+
+ax.set_ylabel("Proporción (%)")
+ax.set_title("Proporción (%) de estudiantes por carrera y categoría")
+ax.set_xticks(x)
+ax.set_xticklabels(pivot_percent.index, rotation=30, ha='right')
+ax.legend(title="Categoría", bbox_to_anchor=(1.02, 1), loc='upper left')
+ax.set_ylim(0, 100)
+
+st.pyplot(fig)
