@@ -518,3 +518,52 @@ else:
         file_name="bottom5_amarillo_por_carrera.csv",
         mime="text/csv"
     )
+
+# ============================================
+# 📌 RADAR CHART VERDE vs AMARILLO POR CARRERA
+# ============================================
+st.header("🕸️ Comparación Verde vs Amarillo por carrera (Radar CHASIDE)")
+
+# Preparar promedios de INTERES+APTITUD por área
+areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
+radar_cols = [f'INTERES_{a}' for a in areas] + [f'APTITUD_{a}' for a in areas]
+
+df_radar = df.copy()
+for a in areas:
+    df_radar[a] = df[f'INTERES_{a}'] + df[f'APTITUD_{a}']  # total por letra
+
+df_radar['Categoría'] = df_display['Categoría']
+df_radar['Carrera'] = df[columna_carrera]
+
+# Selección de carrera
+carreras_disp = df_radar['Carrera'].dropna().unique()
+carrera_sel = st.selectbox("Elige una carrera para comparar:", sorted(carreras_disp))
+
+df_carrera = df_radar[df_radar['Carrera'] == carrera_sel]
+
+if df_carrera.empty or not any(df_carrera['Categoría'].isin(['Verde','Amarillo'])):
+    st.warning("No hay datos suficientes de Verde/Amarillo en esta carrera.")
+else:
+    # Promedio por categoría
+    promedios = (
+        df_carrera[df_carrera['Categoría'].isin(['Verde','Amarillo'])]
+        .groupby('Categoría')[areas].mean().reset_index()
+    )
+
+    # Radar chart
+    fig_radar = px.line_polar(
+        promedios.melt(id_vars='Categoría', value_vars=areas, var_name='Área', value_name='Promedio'),
+        r='Promedio',
+        theta='Área',
+        color='Categoría',
+        line_close=True,
+        markers=True,
+        title=f"Radar CHASIDE – {carrera_sel}"
+    )
+
+    fig_radar.update_traces(fill='toself')
+    st.plotly_chart(fig_radar, use_container_width=True)
+
+    # Mostrar tabla con valores
+    st.subheader("Promedios por categoría")
+    st.dataframe(promedios.set_index('Categoría'))
