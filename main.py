@@ -360,3 +360,107 @@ else:
     fig.update_layout(yaxis_title="Proporción (%)", xaxis_title="Carrera", xaxis_tickangle=-30, height=620)
 
 st.plotly_chart(fig, use_container_width=True)
+
+# ============================================
+# 📌 BOXPLOTS CON OUTLIERS POR CARRERA Y CATEGORÍA
+# ============================================
+st.header("📦 Boxplots con outliers por carrera")
+
+# 1) Score por alumno: máximo de PUNTAJE_COMBINADO_* (coincide con el área dominante ponderada)
+score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in areas]
+df_scores = df.copy()
+df_scores['Score'] = df_scores[score_cols].max(axis=1)
+
+# Alinear con df_display (mismas filas/orden)
+df_display_scores = df_display.copy()
+df_display_scores['Score'] = df_scores['Score'].values
+df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values  # por contexto en tablas
+
+# 2) Definir subconjuntos por categoría
+mask_verde = df_display_scores['Categoría'] == 'Verde'
+mask_amarillo = df_display_scores['Categoría'] == 'Amarillo'
+mask_resto = df_display_scores['Categoría'].isin(['Requiere atención', 'Sin sugerencia', 'No aceptable'])
+
+tabs = st.tabs(["Verde", "Amarillo", "Resto"])
+
+def plot_box_and_outliers(df_sub, titulo):
+    import plotly.express as px
+
+    if df_sub.empty:
+        st.info("No hay datos para esta categoría.")
+        return
+
+    # --- Boxplot por carrera con outliers visibles
+    fig_box = px.box(
+        df_sub,
+        x=columna_carrera,
+        y='Score',
+        points='outliers',
+        title=titulo
+    )
+    fig_box.update_layout(
+        xaxis_title="Carrera",
+        yaxis_title="Score ponderado (máximo por alumno)",
+        xaxis_tickangle=-30,
+        height=600
+    )
+    st.plotly_chart(fig_box, use_container_width=True)
+
+    # --- Detección de outliers por carrera (regla 1.5 * IQR)
+    def bounds(g):
+        q1 = g['Score'].quantile(0.25)
+        q3 = g['Score'].quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        return pd.Series({'Q1': q1, 'Q3': q3, 'IQR': iqr, 'Lower': lower, 'Upper': upper})
+
+    limites = df_sub.groupby(columna_carrera, dropna=False).apply(bounds).reset_index()
+    df_sub = df_sub.merge(limites, on=columna_carrera, how='left')
+    df_out = df_sub[(df_sub['Score'] < df_sub['Lower']) | (df_sub['Score'] > df_sub['Upper'])].copy()
+
+    # Tablas de outliers altos y bajos
+    cols_tabla = [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']
+    out_altos = df_out.sort_values('Score', ascending=False)[cols_tabla]
+    out_bajos = df_out.sort_values('Score', ascending=True)[cols_tabla]
+
+    st.subheader("🔺 Outliers altos (mayor score)")
+    st.dataframe(out_altos, use_container_width=True)
+
+    st.subheader("🔻 Outliers bajos (menor score)")
+    st.dataframe(out_bajos, use_container_width=True)
+
+    # Descarga CSV
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "⬇️ Descargar outliers altos (CSV)",
+            data=out_altos.to_csv(index=False).encode('utf-8'),
+            file_name="outliers_altos.csv",
+            mime="text/csv"
+        )
+    with col2:
+        st.download_button(
+            "⬇️ Descargar outliers bajos (CSV)",
+            data=out_bajos.to_csv(index=False).encode('utf-8'),
+            file_name="outliers_bajos.csv",
+            mime="text/csv"
+        )
+
+with tabs[0]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_verde, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categoría: Verde"
+    )
+
+with tabs[1]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_amarillo, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categoría: Amarillo"
+    )
+
+with tabs[2]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_resto, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categorías: Requiere atención / Sin sugerencia / No aceptable"
+    )
