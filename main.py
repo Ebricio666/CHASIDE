@@ -567,3 +567,62 @@ else:
     # Mostrar tabla con valores
     st.subheader("Promedios por categoría")
     st.dataframe(promedios.set_index('Categoría'))
+
+# ============================================
+# 📌 REPORTE DE BRECHAS VERDE vs AMARILLO POR CARRERA
+# ============================================
+st.header("📑 Reporte de brechas Verde vs Amarillo por carrera")
+
+# Diccionario de descripciones (a partir de tu tabla)
+descripciones_chaside = {
+    "C": "Organización, supervisión, orden, análisis y síntesis, colaboración, cálculo.",
+    "H": "Precisión verbal, organización, relación de hechos, justicia, conciliador, sagaz, persuasivo.",
+    "A": "Estético, creativo, detallista, innovador, intuitivo, visual, auditivo, manual.",
+    "S": "Altruista, paciente, respetuoso, analítico, comprensivo, percepción, ayudar.",
+    "I": "Cálculo, científico, crítico, exactitud, planificar, analítico, práctico, rigidez.",
+    "D": "Justicia, equidad, colaboración, liderazgo, valentía, arriesgado, persuasivo.",
+    "E": "Investigación, orden, análisis, cálculo numérico, observación, método, seguridad."
+}
+
+# Total por letra = INTERES + APTITUD
+areas = ['C', 'H', 'A', 'S', 'I', 'D', 'E']
+df_radar = df.copy()
+for a in areas:
+    df_radar[a] = df[f'INTERES_{a}'] + df[f'APTITUD_{a}']
+
+df_radar['Categoría'] = df_display['Categoría']
+df_radar['Carrera'] = df[columna_carrera]
+
+# Procesar cada carrera
+carreras_disp = sorted(df_radar['Carrera'].dropna().unique())
+for carrera in carreras_disp:
+    st.subheader(f"🎓 {carrera}")
+
+    df_carrera = df_radar[df_radar['Carrera'] == carrera]
+    if not any(df_carrera['Categoría'].isin(['Verde','Amarillo'])):
+        st.info("No hay datos suficientes de Verde y Amarillo en esta carrera.")
+        continue
+
+    # Promedio por categoría
+    prom = (
+        df_carrera[df_carrera['Categoría'].isin(['Verde','Amarillo'])]
+        .groupby('Categoría')[areas].mean()
+    )
+
+    if 'Verde' not in prom.index or 'Amarillo' not in prom.index:
+        st.info("Faltan datos de alguna categoría en esta carrera.")
+        continue
+
+    # Diferencia Verde – Amarillo
+    diffs = prom.loc['Verde'] - prom.loc['Amarillo']
+    top3 = diffs.sort_values(ascending=False).head(3)
+
+    # Mostrar tabla de diferencias
+    st.write("📊 Diferencias Verde – Amarillo (positivas = Amarillo más bajo):")
+    st.dataframe(diffs.to_frame("Diferencia").sort_values("Diferencia", ascending=False))
+
+    # Reporte de las 3 aristas con mayor brecha
+    st.markdown("**🔎 Áreas críticas a reforzar (Top 3):**")
+    for letra, valor in top3.items():
+        st.markdown(f"- **{letra}**: diferencia {valor:.2f} puntos. "
+                    f"Aptitudes/Intereses a fomentar → {descripciones_chaside[letra]}")
