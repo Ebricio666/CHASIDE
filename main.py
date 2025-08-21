@@ -361,15 +361,34 @@ else:
 
 st.plotly_chart(fig, use_container_width=True)
 
-# --- Pega esto EN LUGAR de tu función plot_box_and_outliers actual ---
-def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
-    import plotly.express as px
+# ============================================
+# 📌 BOXPLOTS CON OUTLIERS POR CARRERA Y CATEGORÍA
+# ============================================
+st.header("📦 Boxplots con outliers por carrera")
 
+# 1) Score por alumno: máximo de PUNTAJE_COMBINADO_* (coincide con el área dominante ponderada)
+score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in areas]
+df_scores = df.copy()
+df_scores['Score'] = df_scores[score_cols].max(axis=1)
+
+# Alinear con df_display (mismas filas/orden)
+df_display_scores = df_display.copy()
+df_display_scores['Score'] = df_scores['Score'].values
+df_display_scores['Área fuerte'] = df['Area_Fuerte_Ponderada'].values  # contexto
+
+# Subconjuntos
+mask_verde = df_display_scores['Categoría'] == 'Verde'
+mask_amarillo = df_display_scores['Categoría'] == 'Amarillo'
+mask_resto = df_display_scores['Categoría'].isin(['Requiere atención', 'Sin sugerencia', 'No aceptable'])
+
+tabs = st.tabs(["Verde", "Amarillo", "Resto"])
+
+# --- Función con keys únicos para evitar StreamlitDuplicateElementId
+def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
     if df_sub.empty:
         st.info("No hay datos para esta categoría.")
         return
 
-    # --- Boxplot por carrera con outliers visibles
     fig_box = px.box(
         df_sub,
         x=columna_carrera,
@@ -385,7 +404,7 @@ def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
     )
     st.plotly_chart(fig_box, use_container_width=True, key=f"{key_prefix}_box")
 
-    # --- Detección de outliers por carrera (regla 1.5 * IQR)
+    # Detección de outliers por carrera (1.5 IQR)
     def bounds(g):
         q1 = g['Score'].quantile(0.25)
         q3 = g['Score'].quantile(0.75)
@@ -408,7 +427,6 @@ def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
     out_bajos = df_out.sort_values('Score', ascending=True)[cols_tabla]
     st.dataframe(out_bajos, use_container_width=True, key=f"{key_prefix}_bajos_df")
 
-    # Descarga CSV con keys únicos
     col1, col2 = st.columns(2)
     with col1:
         st.download_button(
@@ -426,3 +444,24 @@ def plot_box_and_outliers(df_sub, titulo, key_prefix: str):
             mime="text/csv",
             key=f"{key_prefix}_dl_bajos"
         )
+
+with tabs[0]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_verde, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categoría: Verde",
+        key_prefix="verde"
+    )
+
+with tabs[1]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_amarillo, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categoría: Amarillo",
+        key_prefix="amarillo"
+    )
+
+with tabs[2]:
+    plot_box_and_outliers(
+        df_display_scores.loc[mask_resto, [columna_nombre, columna_carrera, 'Categoría', 'Área fuerte', 'Score']],
+        "Boxplot por carrera – Categorías: Requiere atención / Sin sugerencia / No aceptable",
+        key_prefix="resto"
+    )
