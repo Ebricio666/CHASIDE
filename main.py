@@ -507,17 +507,33 @@ else:
 st.sidebar.caption(
     f"Pesos activos → Intereses: {peso_intereses:.2f} | Aptitudes: {peso_aptitudes:.2f}"
 )
-
 st.sidebar.markdown("### Perfil esperado por carrera")
+
+if "usar_predeterminados" not in st.session_state:
+    st.session_state.usar_predeterminados = True
+
+usar_predeterminados = st.sidebar.checkbox(
+    "Usar perfiles predeterminados",
+    value=st.session_state.usar_predeterminados,
+    help="Activa los perfiles originales diseñados para cada carrera."
+)
+st.session_state.usar_predeterminados = usar_predeterminados
+
 perfil_config = {}
 for carrera, letras_default in DEFAULT_PERFILES.items():
+    widget_key = f"perfil_{carrera}"
+
+    if usar_predeterminados and widget_key not in st.session_state:
+        st.session_state[widget_key] = letras_default
+    elif usar_predeterminados:
+        st.session_state[widget_key] = letras_default
+
     perfil_config[carrera] = st.sidebar.multiselect(
         carrera,
         AREAS,
-        default=letras_default,
-        key=f"perfil_{carrera}"
+        default=st.session_state[widget_key],
+        key=widget_key
     )
-
 # Cargar datos una vez
 try:
     df_raw = load_data(url)
