@@ -1,3 +1,5 @@
+
+
 # ============================================
 # APP CHASIDE · 3 pestañas laterales
 # Presentación | Análisis general | Información individual
@@ -151,30 +153,25 @@ def load_data(url: str) -> pd.DataFrame:
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
 
+    # Normalizar nombres de columnas
+    df.columns = df.columns.str.strip()
+
     columnas_items = df.columns[5:103]
-    columna_carrera = '¿A qué carrera desea ingresar?'
-    columna_nombre  = 'Ingrese su nombre completo'
-# Normalizar nombres de columnas
-df.columns = df.columns.str.strip()
 
-# Diccionario de equivalencias (flexible)
-col_map = {}
+    # Identificación flexible de columnas clave
+    col_map = {}
+    for col in df.columns:
+        col_lower = col.lower().strip()
 
-for col in df.columns:
-    col_lower = col.lower()
+        if "nombre" in col_lower:
+            col_map['nombre'] = col
 
-    if "nombre" in col_lower:
-        col_map['nombre'] = col
+        if "carrera" in col_lower:
+            col_map['carrera'] = col
 
-    if "carrera" in col_lower:
-        col_map['carrera'] = col
-
-# Validación
     if 'nombre' not in col_map or 'carrera' not in col_map:
-    st.error(f"❌ No se pudieron identificar columnas clave. Columnas detectadas: {list(df.columns)}")
-    st.stop()
+        raise ValueError(f"No se pudieron identificar columnas clave. Columnas detectadas: {list(df.columns)}")
 
-# Asignación dinámica
     columna_nombre = col_map['nombre']
     columna_carrera = col_map['carrera']
 
@@ -182,6 +179,183 @@ for col in df.columns:
     if faltantes:
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
+    df_items = (
+        df[columnas_items]
+          .astype(str)
+          .apply(lambda col: col.str.strip().str.lower())
+          .replace({
+              'sí': 1, 'si': 1, 's': 1, '1': 1, 'true': 1, 'verdadero': 1, 'x': 1,
+              'no': 0, 'n': 0, '0': 0, 'false': 0, 'falso': 0, '': 0, 'nan': 0
+          })
+          .apply(pd.to_numeric, errors='coerce')
+          .fillna(0)
+          .astype(int)
+    )
+    df[columnas_items] = df_items
+
+    df['Desv_Intrapersona'] = df[columnas_items].std(axis=1)
+    umbral_intrapersonal = df['Desv_Intrapersona'].quantile(0.10)
+    df['Respondio_Siempre_Igual'] = df['Desv_Intrapersona'] <= umbral_intrapersonal
+
+    for a in AREAS:
+        df[f'INTERES_{a}'] = df[[col_item(columnas_items, i) for i in INTERESES_ITEMS[a]]].sum(axis=1)
+        df[f'APTITUD_{a}'] = df[[col_item(columnas_items, i) for i in APTITUDES_ITEMS[a]]].sum(axis=1)
+
+    for a in AREAS:
+        df[f'PUNTAJE_COMBINADO_{a}'] = (
+            df[f'INTERES_{a}'] * peso_intereses +
+            df[f'APTITUD_{a}'] * peso_aptitudes
+        )
+        df[f'TOTAL_{a}'] = df[f'INTERES_{a}'] + df[f'APTITUD_{a}']
+
+    df['Area_Fuerte_Ponderada'] = df.apply(
+        lambda r: max(AREAS, key=lambda a: r[f'PUNTAJE_COMBINADO_{a}']),
+        axis=1
+    )
+
+    score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in AREAS]
+    df['Score'] = df[score_cols].max(axis=1)
+
+    def evaluar(area_chaside, carrera):
+        p = perfil_carreras.get(str(carrera).strip())
+        if not p:
+            return 'Sin perfil definido'
+        if area_chaside in p:
+            return 'Coherente'
+        return 'Neutral'
+
+    df['Coincidencia_Ponderada'] = df.apply(
+        lambda r: evaluar(r['Area_Fuerte_Ponderada'], r[columna_carrera]),
+        axis=1
+    )
+
+    def carrera_mejor(r):
+        if r['Respondio_Siempre_Igual']:
+            return 'Información no confiable'
+        a = r['Area_Fuerte_Ponderada']
+        c_actual = str(r[columna_carrera]).strip()
+        sugeridas = [c for c, letras in perfil_carreras.items() if a in letras]
+        return c_actual if c_actual in sugeridas else (', '.join(sugeridas) if sugeridas else 'Sin sugerencia clara')
+
+    def diagnostico(r):
+        if r['Carrera_Mejor_Perfilada'] == 'Información no confiable':
+            return 'Información no confiable'
+        if str(r[columna_carrera]).strip() == str(r['Carrera_Mejor_Perfilada']).strip():
+            return 'Perfil adecuado'
+        if r['Carrera_Mejor_Perfilada'] == 'Sin sugerencia clara':
+            return 'Sin sugerencia clara'
+        return f"Sugerencia: {r['Carrera_Mejor_Perfilada']}"
+
+    def semaforo(r):
+        diag = r['Diagnóstico Primario Vocacional']
+        if diag == 'Información no confiable':
+            return 'Respondió siempre igual'
+        if diag == 'Sin sugerencia clara':
+            return 'Sin sugerencia'
+        if diag == 'Perfil adecuado' and r['Coincidencia_Ponderada'] == 'Coherente':
+            return 'Verde'
+        if diag == 'Perfil adecuado' and r['Coincidencia_Ponderada'] == 'Neutral':
+            return 'Amarillo'
+        if isinstance(diag, str) and diag.startswith('Sugerencia:') and r['Coincidencia_Ponderada'] == 'Coherente':
+            return 'Verde'
+        if isinstance(diag, str) and diag.startswith('Sugerencia:') and r['Coincidencia_Ponderada'] == 'Neutral':
+            return 'Amarillo'
+        return 'Rojo'
+
+    df['Carrera_Mejor_Perfilada'] = df.apply(carrera_mejor, axis=1)
+    df['Diagnóstico Primario Vocacional'] = df.apply(diagnostico, axis=1)
+    df['Semáforo Vocacional'] = df.apply(semaforo, axis=1)
+
+    df['Carrera_Corta'] = (
+        df[columna_carrera]
+        .astype(str)
+        .str.replace('Ingeniería', 'Ing.', regex=False)
+    )
+
+    # Intensidad
+    df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
+
+    def asignar_niveles_por_carrera(grupo):
+        grupo = grupo.copy()
+        grupo['Nivel_Intensidad'] = np.nan
+
+        amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
+        ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
+
+        if len(amar) > 0:
+            amar = amar.sort_values('Score', ascending=True).copy()
+            amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
+            amar['Nivel_Intensidad'] = np.where(
+                amar['rank_pct'] <= 0.25,
+                'Sin perfil',
+                'Perfil en riesgo'
+            )
+            grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad']
+
+        if len(ver) > 0:
+            ver = ver.sort_values('Score', ascending=True).copy()
+            ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
+            ver['Nivel_Intensidad'] = np.where(
+                ver['rank_pct'] > 0.75,
+                'Jóven promesa',
+                'Perfil en transición'
+            )
+            grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad']
+
+        return grupo
+
+    if not df_intensidad.empty:
+        df_intensidad = (
+            df_intensidad
+            .groupby(columna_carrera, group_keys=False)
+            .apply(asignar_niveles_por_carrera)
+            .copy()
+        )
+
+    # Destino compatible
+    def letras_carrera(carrera):
+        return perfil_carreras.get(str(carrera).strip(), [])
+
+    def puntaje_promedio_carrera(row, carrera):
+        letras = letras_carrera(carrera)
+        if not letras:
+            return np.nan
+        vals = [row[f'PUNTAJE_COMBINADO_{l}'] for l in letras]
+        return np.mean(vals)
+
+    def carreras_compatibles(carrera_origen):
+        letras_origen = set(letras_carrera(carrera_origen))
+        compatibles = []
+
+        for carrera_destino in perfil_carreras.keys():
+            if carrera_destino == carrera_origen:
+                continue
+            letras_destino = set(letras_carrera(carrera_destino))
+            if len(letras_origen.intersection(letras_destino)) >= 2:
+                compatibles.append(carrera_destino)
+        return compatibles
+
+    def mejor_destino_compatible(row, carrera_origen):
+        score_origen = puntaje_promedio_carrera(row, carrera_origen)
+        candidatas = carreras_compatibles(carrera_origen)
+
+        mejor_carrera = carrera_origen
+        mejor_score = score_origen
+
+        for c in candidatas:
+            score_c = puntaje_promedio_carrera(row, c)
+            if pd.notna(score_c) and score_c > mejor_score:
+                mejor_score = score_c
+                mejor_carrera = c
+
+        return mejor_carrera
+
+    df['Destino_Compatible'] = df.apply(
+        lambda row: mejor_destino_compatible(row, str(row[columna_carrera]).strip()),
+        axis=1
+    )
+
+    return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
     df_items = (
         df[columnas_items]
           .astype(str)
