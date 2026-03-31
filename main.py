@@ -146,7 +146,32 @@ def col_item(columnas_items, i: int) -> str:
 
 @st.cache_data(show_spinner=False)
 def load_data(url: str) -> pd.DataFrame:
-    return pd.read_csv(url)
+    url = url.strip()
+
+    # Si ya es export CSV, usar tal cual
+    if "export?format=csv" in url:
+        final_url = url
+
+    # Si es link de edición/visualización de Google Sheets, convertirlo
+    elif "docs.google.com/spreadsheets" in url:
+        try:
+            file_id = url.split("/d/")[1].split("/")[0]
+
+            gid = "0"
+            if "gid=" in url:
+                gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
+
+            final_url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv&gid={gid}"
+        except Exception:
+            raise ValueError(
+                "No se pudo transformar automáticamente el enlace de Google Sheets. "
+                "Pega el vínculo en formato /edit o directamente en formato /export?format=csv."
+            )
+    else:
+        final_url = url
+
+    return pd.read_csv(final_url)
+st.write("URL final usada:", final_url)
 
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
