@@ -144,16 +144,13 @@ CAT_MAP_LARGO = {
 def col_item(columnas_items, i: int) -> str:
     return columnas_items[i - 1]
 
-@st.cache_data(show_spinner=False)
-def load_data(url: str) -> pd.DataFrame:
+def transformar_url_google_sheets(url: str) -> str:
     url = url.strip()
 
-    # Si ya es export CSV, usar tal cual
     if "export?format=csv" in url:
-        final_url = url
+        return url
 
-    # Si es link de edición/visualización de Google Sheets, convertirlo
-    elif "docs.google.com/spreadsheets" in url:
+    if "docs.google.com/spreadsheets" in url:
         try:
             file_id = url.split("/d/")[1].split("/")[0]
 
@@ -161,25 +158,28 @@ def load_data(url: str) -> pd.DataFrame:
             if "gid=" in url:
                 gid = url.split("gid=")[-1].split("&")[0].split("#")[0]
 
-            final_url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv&gid={gid}"
+            return f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=csv&gid={gid}"
         except Exception:
             raise ValueError(
                 "No se pudo transformar automáticamente el enlace de Google Sheets. "
                 "Pega el vínculo en formato /edit o directamente en formato /export?format=csv."
             )
-    else:
-        final_url = url
 
+    return url
+
+@st.cache_data(show_spinner=False)
+def load_data(url: str) -> pd.DataFrame:
+    final_url = transformar_url_google_sheets(url)
     return pd.read_csv(final_url)
+
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
     df.columns = df.columns.str.strip()
 
-    # Columnas fijas
+    # Columnas fijas de tu nueva escala
     columna_nombre = 'Ingrese su nombre completo'
     columna_carrera = '¿A qué carrera desea ingresar?'
 
-    # Validación de columnas clave
     faltantes = [c for c in [columna_nombre, columna_carrera] if c not in df.columns]
     if faltantes:
         raise ValueError(
@@ -187,16 +187,17 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
             f"Columnas detectadas: {list(df.columns)}"
         )
 
-    # Reactivos CHASIDE (después de las 6 columnas iniciales)
+    # Reactivos CHASIDE: después de 6 columnas iniciales
     columnas_items = df.columns[6:104]
 
     if len(columnas_items) != 98:
         raise ValueError(
-            f"Se esperaban 98 reactivos CHASIDE, pero se detectaron {len(columnas_items)}."
+            f"Se esperaban 98 reactivos CHASIDE, pero se detectaron {len(columnas_items)}. "
+            f"Verifica el orden de columnas del archivo."
         )
 
     # -------------------------
-    # Limpieza de datos
+    # Limpieza de reactivos
     # -------------------------
     df_items = (
         df[columnas_items]
@@ -210,7 +211,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
         .fillna(0)
         .astype(int)
     )
-
     df[columnas_items] = df_items
 
     # -------------------------
@@ -243,7 +243,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     df['Score'] = df[score_cols].max(axis=1)
 
     # -------------------------
-    # Evaluación vocacional
+    # Evaluación de coherencia
     # -------------------------
     def evaluar(area_chaside, carrera):
         p = perfil_carreras.get(str(carrera).strip())
@@ -287,7 +287,9 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
             return 'Verde'
         if diag == 'Perfil adecuado' and r['Coincidencia_Ponderada'] == 'Neutral':
             return 'Amarillo'
-        if isinstance(diag, str) and diag.startswith('Sugerencia:'):
+        if isinstance(diag, str) and diag.startswith('Sugerencia:') and r['Coincidencia_Ponderada'] == 'Coherente':
+            return 'Verde'
+        if isinstance(diag, str) and diag.startswith('Sugerencia:') and r['Coincidencia_Ponderada'] == 'Neutral':
             return 'Amarillo'
         return 'Rojo'
 
@@ -302,9 +304,46 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     )
 
     # -------------------------
-    # Intensidad
+    # Intensidad vocacional
     # -------------------------
     df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
+
+    def asignar_niveles_por_carrera(grupo):
+        grupo = grupo.copy()
+        grupo['Nivel_Intensidad'] = np.nan
+
+        amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
+        ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
+
+        if len(amar) > 0:
+            amar = amar.sort_values('Score', ascending=True).copy()
+            amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
+            amar['Nivel_Intensidad'] = np.where(
+                amar['rank_pct'] <= 0.25,
+                'Sin perfil',
+                'Perfil en riesgo'
+            )
+            grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad']
+
+        if len(ver) > 0:
+            ver = ver.sort_values('Score', ascending=True).copy()
+            ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
+            ver['Nivel_Intensidad'] = np.where(
+                ver['rank_pct'] > 0.75,
+                'Jóven promesa',
+                'Perfil en transición'
+            )
+            grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad']
+
+        return grupo
+
+    if not df_intensidad.empty:
+        df_intensidad = (
+            df_intensidad
+            .groupby(columna_carrera, group_keys=False)
+            .apply(asignar_niveles_por_carrera)
+            .copy()
+        )
 
     # -------------------------
     # Destino compatible
@@ -336,9 +375,8 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
 
     df['Destino_Compatible'] = df.apply(mejor_destino_compatible, axis=1)
 
-print("Estoy dentro de la función")    
-# ✅ ESTE RETURN YA ESTÁ BIEN INDENTADO
-return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal    
+    return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
+
 def build_pdf_report(estudiante, carrera, categoria, intensidad, texto_ubicacion, conclusion_txt):
     buffer = io.BytesIO()
 
@@ -541,7 +579,7 @@ for carrera, letras_default in DEFAULT_PERFILES.items():
 # Cargar datos una vez
 try:
     df_raw = load_data(url)
-    df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal = (
+    df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal = process_data(
         df_raw,
         perfil_config,
         peso_intereses,
