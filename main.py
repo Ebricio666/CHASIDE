@@ -176,7 +176,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
         raise ValueError(f"Faltan columnas requeridas: {faltantes}")
 
     # Se asume que los ítems CHASIDE siguen en las columnas 6 a 103 como en la estructura original
-    columnas_items = df.columns[5:103]
+    columnas_items = df.columns[6:104]
 
     df_items = (
         df[columnas_items]
