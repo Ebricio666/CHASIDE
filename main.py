@@ -173,34 +173,29 @@ def load_data(url: str) -> pd.DataFrame:
     return pd.read_csv(final_url)
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
-
-    # Normalizar nombres de columnas
     df.columns = df.columns.str.strip()
 
-    # Identificación flexible de columnas clave
-    col_map = {}
-    for col in df.columns:
-        col_lower = col.lower().strip()
+    # Columnas fijas para esta versión de la escala
+    columna_nombre = 'Ingrese su nombre completo'
+    columna_carrera = '¿A qué carrera desea ingresar?'
 
-        if "nombre" in col_lower:
-            col_map['nombre'] = col
-
-        if "carrera" in col_lower:
-            col_map['carrera'] = col
-
-    if 'nombre' not in col_map or 'carrera' not in col_map:
-        raise ValueError(f"No se pudieron identificar columnas clave. Columnas detectadas: {list(df.columns)}")
-
-    columna_nombre = col_map['nombre']
-    columna_carrera = col_map['carrera']
-
-    faltantes = [c for c in [columna_carrera, columna_nombre] if c not in df.columns]
+    faltantes = [c for c in [columna_nombre, columna_carrera] if c not in df.columns]
     if faltantes:
-        raise ValueError(f"Faltan columnas requeridas: {faltantes}")
+        raise ValueError(
+            f"Faltan columnas requeridas: {faltantes}. "
+            f"Columnas detectadas: {list(df.columns)}"
+        )
 
-    # Se asume que los ítems CHASIDE siguen en las columnas 6 a 103 como en la estructura original
+    # Reactivos CHASIDE: después de las 6 columnas iniciales
     columnas_items = df.columns[6:104]
 
+    if len(columnas_items) != 98:
+        raise ValueError(
+            f"Se esperaban 98 reactivos CHASIDE, pero se detectaron {len(columnas_items)}. "
+            f"Verifica el orden de columnas del archivo."
+        )
+
+    # Convertir reactivos Sí/No a 1/0
     df_items = (
         df[columnas_items]
           .astype(str)
@@ -215,10 +210,12 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     )
     df[columnas_items] = df_items
 
+    # Desviación intrapersona
     df['Desv_Intrapersona'] = df[columnas_items].std(axis=1)
     umbral_intrapersonal = df['Desv_Intrapersona'].quantile(0.10)
     df['Respondio_Siempre_Igual'] = df['Desv_Intrapersona'] <= umbral_intrapersonal
 
+    # Construcción de puntajes CHASIDE
     for a in AREAS:
         df[f'INTERES_{a}'] = df[[col_item(columnas_items, i) for i in INTERESES_ITEMS[a]]].sum(axis=1)
         df[f'APTITUD_{a}'] = df[[col_item(columnas_items, i) for i in APTITUDES_ITEMS[a]]].sum(axis=1)
@@ -238,6 +235,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in AREAS]
     df['Score'] = df[score_cols].max(axis=1)
 
+    # Evaluación de coherencia
     def evaluar(area_chaside, carrera):
         p = perfil_carreras.get(str(carrera).strip())
         if not p:
@@ -294,7 +292,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
         .str.replace('Ingeniería', 'Ing.', regex=False)
     )
 
-    # Intensidad
+    # Intensidad vocacional
     df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
 
     def asignar_niveles_por_carrera(grupo):
@@ -581,7 +579,7 @@ for carrera, letras_default in DEFAULT_PERFILES.items():
 # Cargar datos una vez
 try:
     df_raw = load_data(url)
-    df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal = process_data(
+    df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal = (
         df_raw,
         perfil_config,
         peso_intereses,
