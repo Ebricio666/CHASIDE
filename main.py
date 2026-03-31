@@ -171,8 +171,6 @@ def load_data(url: str) -> pd.DataFrame:
         final_url = url
 
     return pd.read_csv(final_url)
-st.write("URL final usada:", final_url)
-
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
 
