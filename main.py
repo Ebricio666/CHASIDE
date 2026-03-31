@@ -170,13 +170,13 @@ for col in df.columns:
         col_map['carrera'] = col
 
 # Validación
-if 'nombre' not in col_map or 'carrera' not in col_map:
+    if 'nombre' not in col_map or 'carrera' not in col_map:
     st.error(f"❌ No se pudieron identificar columnas clave. Columnas detectadas: {list(df.columns)}")
     st.stop()
 
 # Asignación dinámica
-columna_nombre = col_map['nombre']
-columna_carrera = col_map['carrera']
+    columna_nombre = col_map['nombre']
+    columna_carrera = col_map['carrera']
 
     faltantes = [c for c in [columna_carrera, columna_nombre] if c not in df.columns]
     if faltantes:
