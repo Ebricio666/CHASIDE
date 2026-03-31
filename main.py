@@ -375,8 +375,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
         axis=1
     )
 
-    return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
-
+return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
 def build_pdf_report(estudiante, carrera, categoria, intensidad, texto_ubicacion, conclusion_txt):
     buffer = io.BytesIO()
 
