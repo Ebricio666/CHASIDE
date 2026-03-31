@@ -154,6 +154,29 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     columnas_items = df.columns[5:103]
     columna_carrera = '¿A qué carrera desea ingresar?'
     columna_nombre  = 'Ingrese su nombre completo'
+# Normalizar nombres de columnas
+df.columns = df.columns.str.strip()
+
+# Diccionario de equivalencias (flexible)
+col_map = {}
+
+for col in df.columns:
+    col_lower = col.lower()
+
+    if "nombre" in col_lower:
+        col_map['nombre'] = col
+
+    if "carrera" in col_lower:
+        col_map['carrera'] = col
+
+# Validación
+if 'nombre' not in col_map or 'carrera' not in col_map:
+    st.error(f"❌ No se pudieron identificar columnas clave. Columnas detectadas: {list(df.columns)}")
+    st.stop()
+
+# Asignación dinámica
+columna_nombre = col_map['nombre']
+columna_carrera = col_map['carrera']
 
     faltantes = [c for c in [columna_carrera, columna_nombre] if c not in df.columns]
     if faltantes:
