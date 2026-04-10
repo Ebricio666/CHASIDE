@@ -772,7 +772,7 @@ COLUMNA_EMAIL = 'Dirección de correo electrónico'
         # -------------------------------------------------
         # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
         # -------------------------------------------------
-        st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
+st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
         st.caption(
             "Este apartado permite identificar a los estudiantes clasificados en cada nivel "
             "de intensidad vocacional para facilitar acciones de acompañamiento, canalización o seguimiento."
