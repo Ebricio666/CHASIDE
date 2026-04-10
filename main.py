@@ -307,35 +307,34 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     # Intensidad vocacional
     # -------------------------
     df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
+def asignar_niveles_por_carrera(grupo):
+    grupo = grupo.copy()
+    grupo['Nivel_Intensidad'] = pd.Series(index=grupo.index, dtype='object')
 
-    def asignar_niveles_por_carrera(grupo):
-        grupo = grupo.copy()
-        grupo['Nivel_Intensidad'] = np.nan
+    amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
+    ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
 
-        amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
-        ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
+    if len(amar) > 0:
+        amar = amar.sort_values('Score', ascending=True).copy()
+        amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
+        amar['Nivel_Intensidad'] = np.where(
+            amar['rank_pct'] <= 0.25,
+            'Sin perfil',
+            'Perfil en riesgo'
+        )
+        grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad'].astype(object)
 
-        if len(amar) > 0:
-            amar = amar.sort_values('Score', ascending=True).copy()
-            amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
-            amar['Nivel_Intensidad'] = np.where(
-                amar['rank_pct'] <= 0.25,
-                'Sin perfil',
-                'Perfil en riesgo'
-            )
-            grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad']
+    if len(ver) > 0:
+        ver = ver.sort_values('Score', ascending=True).copy()
+        ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
+        ver['Nivel_Intensidad'] = np.where(
+            ver['rank_pct'] > 0.75,
+            'Jóven promesa',
+            'Perfil en transición'
+        )
+        grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad'].astype(object)
 
-        if len(ver) > 0:
-            ver = ver.sort_values('Score', ascending=True).copy()
-            ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
-            ver['Nivel_Intensidad'] = np.where(
-                ver['rank_pct'] > 0.75,
-                'Jóven promesa',
-                'Perfil en transición'
-            )
-            grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad']
-
-        return grupo
+    return grupo
 
     if not df_intensidad.empty:
         df_intensidad = (
