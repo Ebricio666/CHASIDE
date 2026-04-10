@@ -422,11 +422,12 @@ def build_pdf_report(estudiante, carrera, categoria, intensidad, texto_ubicacion
     story.append(Paragraph(f"<b>Intensidad vocacional:</b> {intensidad}", styles['BodySmall']))
     story.append(Spacer(1, 8))
 
-    story.append(Paragraph("Ubicación dentro del análisis general", styles['HeadingTeal']))
-    for linea in texto_ubicacion.split("\n"):
-        if linea.strip():
-            story.append(Paragraph(linea.strip(), styles['BodySmall']))
-
+    if texto_ubicacion.strip():
+        story.append(Paragraph("Resumen del participante", styles['HeadingTeal']))
+        for linea in texto_ubicacion.split("\n"):
+            if linea.strip():
+                story.append(Paragraph(linea.strip(), styles['BodySmall']))
+                
     story.append(Paragraph("Conclusión y recomendación", styles['HeadingTeal']))
     story.append(Paragraph(conclusion_txt, styles['BodySmall']))
 
@@ -1187,21 +1188,6 @@ def render_info_individual():
     correo_participante = al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else "No disponible"
     sexo_participante = al['Seleccione su sexo'] if 'Seleccione su sexo' in al.index else "No disponible"
 
-    st.markdown("## 📄 Resumen individual del participante")
-    st.markdown(
-        f"""
-- **Nombre:** {est_sel}
-- **Correo electrónico:** {correo_participante}
-- **Sexo:** {sexo_participante}
-- **Carrera elegida:** {carrera_sel}
-- **Área fuerte CHASIDE:** {al['Area_Fuerte_Ponderada']}
-- **Perfil identificado:** {categoria_larga}
-- **Intensidad vocacional:** {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}
-- **Interpretación de intensidad:** {texto_intensidad}
-- **Carrera sugerida compatible:** {destino_compatible}
-- **Interpretación vocacional:** {texto_transicion}
-"""
-    )
 
     st.markdown("## 📝 Conclusión y recomendación")
     texto_conclusion = construir_conclusion_recomendacion(
@@ -1212,19 +1198,8 @@ def render_info_individual():
     )
     st.markdown(texto_conclusion)
 
-    texto_ubicacion_pdf = (
-        f"Nombre: {est_sel}\n"
-        f"Correo electrónico: {correo_participante}\n"
-        f"Sexo: {sexo_participante}\n"
-        f"Carrera elegida: {carrera_sel}\n"
-        f"Área fuerte CHASIDE: {al['Area_Fuerte_Ponderada']}\n"
-        f"Perfil identificado: {categoria_larga}\n"
-        f"Intensidad vocacional: {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}\n"
-        f"Interpretación de intensidad: {texto_intensidad}\n"
-        f"Carrera sugerida compatible: {destino_compatible}\n"
-        f"Interpretación vocacional: {texto_transicion}"
-    )
-
+    texto_ubicacion_pdf = ""
+    
     pdf_bytes = build_pdf_report(
         estudiante=est_sel,
         carrera=carrera_sel,
