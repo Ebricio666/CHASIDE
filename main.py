@@ -1,7 +1,6 @@
 # ============================================
 # APP CHASIDE · 3 pestañas laterales
 # Presentación | Análisis general | Información individual
-# Ajustes del algoritmo en sidebar
 # ============================================
 
 import io
@@ -138,11 +137,14 @@ CAT_MAP_LARGO = {
     'Respondió siempre igual': 'Respondió siempre igual'
 }
 
+COLUMNA_EMAIL = 'Dirección de correo electrónico'
+
 # -------------------------------------------------
 # UTILIDADES
 # -------------------------------------------------
 def col_item(columnas_items, i: int) -> str:
     return columnas_items[i - 1]
+
 
 def transformar_url_google_sheets(url: str) -> str:
     url = url.strip()
@@ -167,16 +169,27 @@ def transformar_url_google_sheets(url: str) -> str:
 
     return url
 
+
 @st.cache_data(show_spinner=False)
 def load_data(url: str) -> pd.DataFrame:
     final_url = transformar_url_google_sheets(url)
     return pd.read_csv(final_url)
 
+
+def dataframe_a_excel_bytes(dic_hojas: dict) -> bytes:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for nombre_hoja, df_hoja in dic_hojas.items():
+            nombre_limpio = str(nombre_hoja)[:31] if nombre_hoja else "Hoja"
+            df_hoja.to_excel(writer, index=False, sheet_name=nombre_limpio)
+    output.seek(0)
+    return output.getvalue()
+
+
 def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float, peso_aptitudes: float):
     df = df.copy()
     df.columns = df.columns.str.strip()
 
-    # Columnas fijas de tu nueva escala
     columna_nombre = 'Ingrese su nombre completo'
     columna_carrera = '¿A qué carrera desea ingresar?'
 
@@ -187,7 +200,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
             f"Columnas detectadas: {list(df.columns)}"
         )
 
-    # Reactivos CHASIDE: después de 6 columnas iniciales
     columnas_items = df.columns[6:104]
 
     if len(columnas_items) != 98:
@@ -196,9 +208,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
             f"Verifica el orden de columnas del archivo."
         )
 
-    # -------------------------
-    # Limpieza de reactivos
-    # -------------------------
     df_items = (
         df[columnas_items]
         .astype(str)
@@ -213,16 +222,10 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     )
     df[columnas_items] = df_items
 
-    # -------------------------
-    # Calidad de respuesta
-    # -------------------------
     df['Desv_Intrapersona'] = df[columnas_items].std(axis=1)
     umbral_intrapersonal = df['Desv_Intrapersona'].quantile(0.10)
     df['Respondio_Siempre_Igual'] = df['Desv_Intrapersona'] <= umbral_intrapersonal
 
-    # -------------------------
-    # Cálculo CHASIDE
-    # -------------------------
     for a in AREAS:
         df[f'INTERES_{a}'] = df[[col_item(columnas_items, i) for i in INTERESES_ITEMS[a]]].sum(axis=1)
         df[f'APTITUD_{a}'] = df[[col_item(columnas_items, i) for i in APTITUDES_ITEMS[a]]].sum(axis=1)
@@ -242,9 +245,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     score_cols = [f'PUNTAJE_COMBINADO_{a}' for a in AREAS]
     df['Score'] = df[score_cols].max(axis=1)
 
-    # -------------------------
-    # Evaluación de coherencia
-    # -------------------------
     def evaluar(area_chaside, carrera):
         p = perfil_carreras.get(str(carrera).strip())
         if not p:
@@ -303,12 +303,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
         .str.replace('Ingeniería', 'Ing.', regex=False)
     )
 
-    # -------------------------
-    # Intensidad vocacional
-    # -------------------------
-     # -------------------------
-    # Intensidad vocacional
-    # -------------------------
     df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
 
     def asignar_niveles_por_carrera(grupo):
@@ -348,9 +342,6 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
             .copy()
         )
 
-    # -------------------------
-    # Destino compatible
-    # -------------------------
     def letras_carrera(carrera):
         return perfil_carreras.get(str(carrera).strip(), [])
 
@@ -379,45 +370,7 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     df['Destino_Compatible'] = df.apply(mejor_destino_compatible, axis=1)
 
     return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
-    if not df_intensidad.empty:
-        df_intensidad = (
-            df_intensidad
-            .groupby(columna_carrera, group_keys=False)
-            .apply(asignar_niveles_por_carrera)
-            .copy()
-        )
 
-    # -------------------------
-    # Destino compatible
-    # -------------------------
-    def letras_carrera(carrera):
-        return perfil_carreras.get(str(carrera).strip(), [])
-
-    def puntaje_promedio_carrera(row, carrera):
-        letras = letras_carrera(carrera)
-        if not letras:
-            return np.nan
-        return np.mean([row[f'PUNTAJE_COMBINADO_{l}'] for l in letras])
-
-    def mejor_destino_compatible(row):
-        carrera = str(row[columna_carrera]).strip()
-        letras = letras_carrera(carrera)
-
-        mejor = carrera
-        mejor_score = puntaje_promedio_carrera(row, carrera)
-
-        for c, letras_c in perfil_carreras.items():
-            if len(set(letras).intersection(letras_c)) >= 2:
-                score = puntaje_promedio_carrera(row, c)
-                if pd.notna(score) and score > mejor_score:
-                    mejor_score = score
-                    mejor = c
-
-        return mejor
-
-    df['Destino_Compatible'] = df.apply(mejor_destino_compatible, axis=1)
-
-    return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
 
 def build_pdf_report(estudiante, carrera, categoria, intensidad, texto_ubicacion, conclusion_txt):
     buffer = io.BytesIO()
@@ -481,6 +434,7 @@ def build_pdf_report(estudiante, carrera, categoria, intensidad, texto_ubicacion
     pdf = buffer.getvalue()
     buffer.close()
     return pdf
+
 
 def construir_conclusion_recomendacion(al, carrera_sel, destino_compatible, nivel_alumno):
     categoria = al['Semáforo Vocacional']
@@ -606,9 +560,10 @@ perfil_config = {}
 for carrera, letras_default in DEFAULT_PERFILES.items():
     widget_key = f"perfil_{carrera}"
 
-    if usar_predeterminados and widget_key not in st.session_state:
+    if usar_predeterminados:
         st.session_state[widget_key] = letras_default
-    elif usar_predeterminados:
+
+    if widget_key not in st.session_state:
         st.session_state[widget_key] = letras_default
 
     perfil_config[carrera] = st.sidebar.multiselect(
@@ -618,7 +573,9 @@ for carrera, letras_default in DEFAULT_PERFILES.items():
         key=widget_key
     )
 
-# Cargar datos una vez
+# -------------------------------------------------
+# CARGA DE DATOS
+# -------------------------------------------------
 try:
     df_raw = load_data(url)
     df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal = process_data(
@@ -693,92 +650,140 @@ capaz de:
 """
     )
 
-    st.markdown("---")
-    st.markdown("## Equipo de trabajo")
-
-    autores = [
-        {
-            "Nombre completo": "Elena Elsa Bricio-Barrios",
-            "Correo": "elena.bricio@colima.tecnm.mx",
-            "Nacionalidad": "Mexicana",
-            "Grado": "Doctorado, Universidad de Guanajuato, México",
-            "Adscripción": "Tecnológico Nacional de México/Instituto Tecnológico de Colima. Profesora de asignatura y Presidenta de academia del departamento de Ciencias Básicas.",
-            "Temas": "Minería de datos cualitativos, Investigación educativa y simulación numérica basado en modelo matemático.",
-            "ORCID": "https://orcid.org/0000-0002-1260-9740"
-        },
-        {
-            "Nombre completo": "Santiago Arceo Diaz",
-            "Correo": "santiago.arceo@colima.tecnm.mx",
-            "Nacionalidad": "Mexicano",
-            "Grado": "Doctorado, Universidad de Guanajuato, México",
-            "Adscripción": "Tecnológico Nacional de México/Instituto Tecnológico de Colima. Profesor de asignatura y miembro del Núcleo académico del Posgrado en Sistemas Computacionales.",
-            "Temas": "Minería de datos cuantitativos, Ciencia de datos, modelado estocástico.",
-            "ORCID": "https://orcid.org/0000-0002-7085-3653"
-        },
-        {
-            "Nombre completo": "Martha Cecilia Ramírez Guzmán",
-            "Correo": "cecilia.ramirez@colima.tecnm.mx",
-            "Nacionalidad": "Mexicana",
-            "Grado": "Licenciada en Psicología, Universidad de Colima",
-            "Adscripción": "Tecnológico Nacional de México/Instituto Tecnológico de Colima. Jefa del departamento de Desarrollo Académico.",
-            "Temas": "Pruebas diagnósticas en el apoyo del estudiantado para aplicar técnicas de afrontamiento para mejorar su bienestar emocional.",
-            "ORCID": "https://orcid.org/0009-0007-3834-0640"
-        }
-    ]
-
-    for autor in autores:
-        with st.expander(autor["Nombre completo"]):
-            st.markdown(f"**Correo:** {autor['Correo']}")
-            st.markdown(f"**Nacionalidad:** {autor['Nacionalidad']}")
-            st.markdown(f"**Grado:** {autor['Grado']}")
-            st.markdown(f"**Adscripción laboral:** {autor['Adscripción']}")
-            st.markdown(f"**Principales temas de investigación:** {autor['Temas']}")
-            st.markdown(f"**ORCID:** {autor['ORCID']}")
-
-def detectar_columna_email(df: pd.DataFrame) -> str:
-    candidatos = [
-        'Escriba su correo electrónico',
-        'Dirección de correo electrónico',
-        'Correo electrónico',
-        'Email',
-        'email'
-    ]
-    for c in candidatos:
-        if c in df.columns:
-            return c
-
-    # búsqueda flexible
-    for c in df.columns:
-        cl = str(c).strip().lower()
-        if 'correo' in cl or 'email' in cl:
-            return c
-
-    return None
-
-
-def dataframe_a_excel_bytes(dic_hojas: dict) -> bytes:
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for nombre_hoja, df_hoja in dic_hojas.items():
-            nombre_limpio = str(nombre_hoja)[:31] if nombre_hoja else "Hoja"
-            df_hoja.to_excel(writer, index=False, sheet_name=nombre_limpio)
-    output.seek(0)
-    return output.getvalue()
-
-COLUMNA_EMAIL = 'Dirección de correo electrónico'
 # -------------------------------------------------
 # RENDER 2 · ANÁLISIS GENERAL
 # -------------------------------------------------
-        # -------------------------------------------------
-        # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
-        # -------------------------------------------------
-st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
+def render_analisis_general():
+    st.title("Diagnóstico Vocacional - Escala CHASIDE")
+    st.caption(
+        f"Criterio de calidad de respuesta: el 10% inferior de la desviación intrapersona "
+        f"se clasifica como 'Respondió siempre igual'. Umbral actual = {umbral_intrapersonal:.4f}"
+    )
+
+    # -------------------------
+    # Pastel
+    # -------------------------
+    st.subheader("📊 Distribución de respuestas del estudiantado")
+
+    df_pastel = df.copy()
+    df_pastel['Categoría_Pastel'] = df_pastel['Semáforo Vocacional'].replace(CAT_MAP_LARGO)
+
+    resumen = df_pastel['Categoría_Pastel'].value_counts().reset_index()
+    resumen.columns = ['Categoría', 'N']
+
+    fig = px.pie(
+        resumen,
+        names='Categoría',
+        values='N',
+        hole=0.4,
+        color='Categoría',
+        color_discrete_map={
+            'El perfil coincide con la carrera elegida': '#22c55e',
+            'El perfil NO va acorde con la carrera elegida': '#f59e0b',
+            'No se observa un perfil prioritario': '#6b7280',
+            'Respondió siempre igual': '#ef4444'
+        }
+    )
+    fig.update_traces(textposition='inside', texttemplate='%{percent:.1%}')
+    fig.update_layout(
+        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center"),
+        margin=dict(t=40, b=120)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # -------------------------
+    # Barras por carrera
+    # -------------------------
+    st.header("📊 Distribución por carrera y categoría")
+
+    df_barras = df.copy()
+    df_barras['Categoría_Barras'] = df_barras['Semáforo Vocacional'].replace(CAT_MAP_LARGO)
+
+    cats_order_largo = [
+        'El perfil coincide con la carrera elegida',
+        'El perfil NO va acorde con la carrera elegida',
+        'No se observa un perfil prioritario',
+        'Respondió siempre igual'
+    ]
+
+    stacked = (
+        df_barras[df_barras['Categoría_Barras'].isin(cats_order_largo)]
+        .groupby(['Carrera_Corta', 'Categoría_Barras'], dropna=False)
+        .size()
+        .reset_index(name='N')
+        .rename(columns={'Categoría_Barras': 'Categoría'})
+    )
+
+    fig_stacked = px.bar(
+        stacked,
+        x='Carrera_Corta',
+        y='N',
+        color='Categoría',
+        category_orders={'Categoría': cats_order_largo},
+        color_discrete_map={
+            'El perfil coincide con la carrera elegida': '#22c55e',
+            'El perfil NO va acorde con la carrera elegida': '#f59e0b',
+            'No se observa un perfil prioritario': '#6b7280',
+            'Respondió siempre igual': '#ef4444'
+        },
+        barmode='stack',
+        text='N'
+    )
+    fig_stacked.update_layout(
+        height=650,
+        xaxis_tickangle=-30,
+        legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+        margin=dict(t=40, b=140)
+    )
+    st.plotly_chart(fig_stacked, use_container_width=True)
+
+    # -------------------------
+    # Intensidad
+    # -------------------------
+    st.header("📊 Intensidad del perfil vocacional por carrera")
+
+    if df_intensidad.empty:
+        st.warning("No hay datos de intensidad.")
+    else:
+        resumen_intensidad = (
+            df_intensidad
+            .groupby(['Carrera_Corta', 'Nivel_Intensidad'])
+            .size()
+            .reset_index(name='N')
+        )
+
+        orden_niveles = ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
+
+        fig_int = px.bar(
+            resumen_intensidad,
+            x='Carrera_Corta',
+            y='N',
+            color='Nivel_Intensidad',
+            category_orders={'Nivel_Intensidad': orden_niveles},
+            color_discrete_map={
+                'Sin perfil': '#dc2626',
+                'Perfil en riesgo': '#f59e0b',
+                'Perfil en transición': '#84cc16',
+                'Jóven promesa': '#16a34a'
+            },
+            barmode='stack'
+        )
+        fig_int.update_layout(
+            height=700,
+            xaxis_tickangle=-30,
+            legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+            margin=dict(t=40, b=140)
+        )
+        st.plotly_chart(fig_int, use_container_width=True)
+
+        # -------------------------
+        # Listados de intervención por intensidad
+        # -------------------------
+        st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
         st.caption(
             "Este apartado permite identificar a los estudiantes clasificados en cada nivel "
             "de intensidad vocacional para facilitar acciones de acompañamiento, canalización o seguimiento."
         )
-
-        df_int_listado = df_intensidad.copy()
 
         columnas_exportar = [
             columna_nombre,
@@ -788,7 +793,7 @@ st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
             'Semáforo Vocacional',
             'Nivel_Intensidad'
         ]
-        columnas_exportar = [c for c in columnas_exportar if c in df_int_listado.columns]
+        columnas_exportar = [c for c in columnas_exportar if c in df_intensidad.columns]
 
         tabs_int = st.tabs([
             "Sin perfil",
@@ -804,7 +809,7 @@ st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
             ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
         ):
             with tab:
-                sub_nivel = df_int_listado[df_int_listado['Nivel_Intensidad'] == nivel].copy()
+                sub_nivel = df_intensidad[df_intensidad['Nivel_Intensidad'] == nivel].copy()
 
                 if sub_nivel.empty:
                     st.info(f"No hay estudiantes clasificados como '{nivel}'.")
@@ -846,428 +851,55 @@ st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
             key="download_intensidad_xlsx"
         )
 
-def render_analisis_general():
-    st.title("Diagnóstico Vocacional - Escala CHASIDE")
-
-    COLUMNA_EMAIL = 'Dirección de correo electrónico'
-
-    st.subheader("📊 Distribución de respuestas del estudiantado")
-
-    df_pastel = df.copy()
-    df_pastel['Categoría_Pastel'] = df_pastel['Semáforo Vocacional'].replace(CAT_MAP_LARGO)
-
-    resumen = df_pastel['Categoría_Pastel'].value_counts().reset_index()
-    resumen.columns = ['Categoría', 'N']
-
-    fig = px.pie(
-        resumen,
-        names='Categoría',
-        values='N',
-        hole=0.4
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.header("📊 Intensidad del perfil vocacional por carrera")
-
-    if df_intensidad.empty:
-        st.warning("No hay datos de intensidad.")
-    else:
-        resumen_intensidad = (
-            df_intensidad
-            .groupby(['Carrera_Corta', 'Nivel_Intensidad'])
-            .size()
-            .reset_index(name='N')
-        )
-
-        fig_int = px.bar(
-            resumen_intensidad,
-            x='Carrera_Corta',
-            y='N',
-            color='Nivel_Intensidad',
-            barmode='stack'
-        )
-        st.plotly_chart(fig_int, use_container_width=True)
-
-        st.markdown("## 📋 Listado de intervención por intensidad")
-
-        columnas_exportar = [
-            columna_nombre,
-            COLUMNA_EMAIL,
-            columna_carrera,
-            'Nivel_Intensidad'
-        ]
-        columnas_exportar = [c for c in columnas_exportar if c in df_intensidad.columns]
-
-        tabs = st.tabs([
-            "Sin perfil",
-            "Perfil en riesgo",
-            "Perfil en transición",
-            "Jóven promesa"
-        ])
-
-        hojas = {}
-
-        for tab, nivel in zip(
-            tabs,
-            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
-        ):
-            with tab:
-                sub = df_intensidad[df_intensidad['Nivel_Intensidad'] == nivel]
-
-                if sub.empty:
-                    st.info("Sin datos")
-                    hojas[nivel] = pd.DataFrame()
-                else:
-                    tabla = (
-                        sub[columnas_exportar]
-                        .rename(columns={
-                            columna_nombre: 'Nombre',
-                            COLUMNA_EMAIL: 'Correo',
-                            columna_carrera: 'Carrera'
-                        })
-                    )
-
-                    st.dataframe(tabla, use_container_width=True)
-                    hojas[nivel] = tabla
-
-        excel_bytes = dataframe_a_excel_bytes(hojas)
-
-        st.download_button(
-            "⬇️ Descargar listado de intervención",
-            data=excel_bytes,
-            file_name="intervencion_vocacional.xlsx"
-        )
-
-    st.header("🌊 Transición vocacional compatible")
-
-    df_sankey = df.copy()
-    df_sankey = df_sankey[df_sankey['Semáforo Vocacional'] != 'Respondió siempre igual']
-
-    carreras = sorted(df_sankey[columna_carrera].dropna().unique())
-
-    if carreras:
-        carrera_sel = st.selectbox("Selecciona carrera:", carreras)
-
-        sub = df_sankey[df_sankey[columna_carrera] == carrera_sel]
-
-        if not sub.empty:
-            flujos = sub['Destino_Compatible'].value_counts().reset_index()
-            flujos.columns = ['Destino', 'N']
-
-            fig = go.Figure(go.Sankey(
-                node=dict(label=[carrera_sel] + flujos['Destino'].tolist()),
-                link=dict(
-                    source=[0] * len(flujos),
-                    target=list(range(1, len(flujos) + 1)),
-                    value=flujos['N']
-                )
-            ))
-
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown("## 📋 Listado de intervención por transición")
-
-            columnas_exportar = [
-                columna_nombre,
-                COLUMNA_EMAIL,
-                columna_carrera,
-                'Destino_Compatible'
-            ]
-            columnas_exportar = [c for c in columnas_exportar if c in sub.columns]
-
-            tabs_trans = st.tabs(flujos['Destino'].tolist())
-
-            hojas_trans = {}
-
-            for tab, destino in zip(tabs_trans, flujos['Destino']):
-                with tab:
-                    sub_dest = sub[sub['Destino_Compatible'] == destino]
-
-                    if sub_dest.empty:
-                        st.info("Sin datos")
-                        hojas_trans[destino] = pd.DataFrame()
-                    else:
-                        tabla = (
-                            sub_dest[columnas_exportar]
-                            .rename(columns={
-                                columna_nombre: 'Nombre',
-                                COLUMNA_EMAIL: 'Correo',
-                                columna_carrera: 'Carrera'
-                            })
-                        )
-
-                        st.dataframe(tabla, use_container_width=True)
-                        hojas_trans[destino] = tabla
-
-            excel_trans = dataframe_a_excel_bytes(hojas_trans)
-
-            st.download_button(
-                "⬇️ Descargar transición vocacional",
-                data=excel_trans,
-                file_name="transicion_vocacional.xlsx"
-            )
-# =========================
-    # SANKEY
-    # =========================
-    st.header("🌊 Transición vocacional compatible")
-
-    df_sankey = df.copy()
-    df_sankey = df_sankey[df_sankey['Semáforo Vocacional'] != 'Respondió siempre igual']
-
-    carreras = sorted(df_sankey[columna_carrera].dropna().unique())
-
-    if carreras:
-        carrera_sel = st.selectbox("Selecciona carrera:", carreras)
-
-        sub = df_sankey[df_sankey[columna_carrera] == carrera_sel]
-
-        if not sub.empty:
-            flujos = sub['Destino_Compatible'].value_counts().reset_index()
-            flujos.columns = ['Destino', 'N']
-
-            fig = go.Figure(go.Sankey(
-                node=dict(label=[carrera_sel] + flujos['Destino'].tolist()),
-                link=dict(
-                    source=[0]*len(flujos),
-                    target=list(range(1, len(flujos)+1)),
-                    value=flujos['N']
-                )
-            ))
-
-            st.plotly_chart(fig, use_container_width=True)
-
-            # =========================
-            # LISTADOS TRANSICIÓN
-            # =========================
-            st.markdown("## 📋 Listado de intervención por transición")
-
-            columnas_exportar = [
-                columna_nombre,
-                COLUMNA_EMAIL,
-                columna_carrera,
-                'Destino_Compatible'
-            ]
-            columnas_exportar = [c for c in columnas_exportar if c in sub.columns]
-
-            tabs_trans = st.tabs(flujos['Destino'].tolist())
-
-            hojas_trans = {}
-
-            for tab, destino in zip(tabs_trans, flujos['Destino']):
-                with tab:
-                    sub_dest = sub[sub['Destino_Compatible'] == destino]
-
-                    if sub_dest.empty:
-                        st.info("Sin datos")
-                        hojas_trans[destino] = pd.DataFrame()
-                    else:
-                        tabla = (
-                            sub_dest[columnas_exportar]
-                            .rename(columns={
-                                columna_nombre: 'Nombre',
-                                COLUMNA_EMAIL: 'Correo',
-                                columna_carrera: 'Carrera'
-                            })
-                        )
-
-                        st.dataframe(tabla, use_container_width=True)
-                        hojas_trans[destino] = tabla
-
-            excel_trans = dataframe_a_excel_bytes(hojas_trans)
-
-            st.download_button(
-                "⬇️ Descargar transición vocacional",
-                data=excel_trans,
-                file_name="transicion_vocacional.xlsx"
-            )
-        # -------------------------------------------------
-        # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
-        # -------------------------------------------------
-        st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
-        st.caption(
-            "Este apartado permite identificar a los estudiantes clasificados en cada nivel "
-            "de intensidad vocacional para facilitar acciones de acompañamiento, canalización o seguimiento."
-        )
-
-        col_email = detectar_columna_email(df)
-
-        columnas_exportar = [columna_nombre]
-        if col_email is not None:
-            columnas_exportar.append(col_email)
-        columnas_exportar += [columna_carrera, 'Carrera_Corta', 'Semáforo Vocacional', 'Nivel_Intensidad']
-
-        df_int_listado = df_intensidad.copy()
-
-        tabs_int = st.tabs([
-            "Sin perfil",
-            "Perfil en riesgo",
-            "Perfil en transición",
-            "Jóven promesa"
-        ])
-
-        hojas_intensidad = {}
-
-        for tab, nivel in zip(
-            tabs_int,
-            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
-        ):
-            with tab:
-                sub_nivel = df_int_listado[df_int_listado['Nivel_Intensidad'] == nivel].copy()
-
-                if sub_nivel.empty:
-                    st.info(f"No hay estudiantes clasificados como '{nivel}'.")
-                    hojas_intensidad[nivel] = pd.DataFrame(columns=columnas_exportar)
-                else:
-                    tabla = (
-                        sub_nivel[columnas_exportar]
-                        .sort_values([columna_carrera, columna_nombre])
-                        .rename(columns={
-                            columna_nombre: 'Nombre del estudiante',
-                            col_email if col_email else '': 'Correo electrónico',
-                            columna_carrera: 'Carrera'
-                        })
-                    )
-
-                    # si no hay email, evitar renombrado raro
-                    if col_email is None and '' in tabla.columns:
-                        tabla = tabla.drop(columns=[''])
-
-                    st.dataframe(tabla, use_container_width=True)
-                    st.metric("Total de estudiantes", len(tabla))
-
-                    hojas_intensidad[nivel] = tabla
-
-        excel_intensidad = dataframe_a_excel_bytes(hojas_intensidad)
-
-        st.download_button(
-            label="⬇️ Descargar listado de intensidad vocacional (.xlsx)",
-            data=excel_intensidad,
-            file_name="listado_intensidad_vocacional.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            key="download_intensidad_xlsx"
-        )
-    
+    # -------------------------
     # Sankey
+    # -------------------------
     st.header("🌊 Transición vocacional compatible por carrera")
-    st.caption(
-        "Seleccione una carrera para analizar si sus estudiantes presentan mejor ajuste "
-        "hacia otra carrera con perfil CHASIDE compatible."
-    )
 
     df_sankey = df.copy()
-    df_sankey = df_sankey[~df_sankey['Semáforo Vocacional'].isin(['Respondió siempre igual'])].copy()
-    df_sankey[columna_carrera] = df_sankey[columna_carrera].astype(str).str.strip()
+    df_sankey = df_sankey[df_sankey['Semáforo Vocacional'] != 'Respondió siempre igual'].copy()
 
-    carreras_disp = sorted(df_sankey[columna_carrera].dropna().unique())
+    carreras = sorted(df_sankey[columna_carrera].dropna().astype(str).unique())
 
-    if carreras_disp:
-        carrera_sel = st.selectbox("Seleccione la carrera de origen:", carreras_disp, key="sankey_carrera_origen")
+    if carreras:
+        carrera_sel = st.selectbox("Selecciona carrera:", carreras, key="sankey_carrera")
 
         sub = df_sankey[df_sankey[columna_carrera] == carrera_sel].copy()
 
-        if sub.empty:
-            st.warning("No hay estudiantes para esta carrera.")
-        else:
-            sub['Destino_Compatible'] = sub.apply(lambda row: df.loc[row.name, 'Destino_Compatible'], axis=1)
+        if not sub.empty:
+            flujos = sub['Destino_Compatible'].value_counts().reset_index()
+            flujos.columns = ['Destino_Compatible', 'N']
 
-            flujos = (
-                sub.groupby('Destino_Compatible')
-                .size()
-                .reset_index(name='N')
-                .sort_values('N', ascending=False)
-            )
-
-            n_total = len(sub)
-
-            def letras_txt(c):
-                return ", ".join(perfil_config.get(c, []))
-
-            label_origen = [f"{carrera_sel}<br>Perfil esperado: {letras_txt(carrera_sel)}<br>Total: {n_total}"]
-            label_destinos = [
-                f"{row['Destino_Compatible']}<br>Perfil: {letras_txt(row['Destino_Compatible'])}<br>Final: {row['N']}"
-                for _, row in flujos.iterrows()
-            ]
-
-            labels = label_origen + label_destinos
+            labels = [carrera_sel] + flujos['Destino_Compatible'].tolist()
             source = [0] * len(flujos)
             target = list(range(1, len(flujos) + 1))
             value = flujos['N'].tolist()
 
-            palette = px.colors.qualitative.Bold + px.colors.qualitative.Dark24
-            destinos_unicos = flujos['Destino_Compatible'].tolist()
-            color_map_destino = {c: palette[i % len(palette)] for i, c in enumerate(destinos_unicos)}
-            color_map_destino[carrera_sel] = '#22c55e'
+            fig = go.Figure(go.Sankey(
+                node=dict(label=labels),
+                link=dict(source=source, target=target, value=value)
+            ))
 
-            node_colors = ['#60a5fa'] + [color_map_destino[d] for d in flujos['Destino_Compatible']]
-            link_colors = [color_map_destino[d] for d in flujos['Destino_Compatible']]
+            st.plotly_chart(fig, use_container_width=True)
 
-            porcentajes = (flujos['N'] / n_total * 100).round(1)
-            customdata = np.stack(
-                [
-                    [carrera_sel] * len(flujos),
-                    flujos['Destino_Compatible'],
-                    flujos['N'],
-                    porcentajes
-                ],
-                axis=-1
-            )
-
-            fig_sankey = go.Figure(data=[go.Sankey(
-                arrangement="snap",
-                node=dict(
-                    pad=20,
-                    thickness=24,
-                    line=dict(color="black", width=0.3),
-                    label=labels,
-                    color=node_colors,
-                    hoverlabel=dict(font=dict(color="black", size=13))
-                ),
-                link=dict(
-                    source=source,
-                    target=target,
-                    value=value,
-                    color=link_colors,
-                    customdata=customdata,
-                    hovertemplate=(
-                        "Carrera elegida: %{customdata[0]}<br>"
-                        "Carrera sugerida compatible: %{customdata[1]}<br>"
-                        "Estudiantes: %{customdata[2]}<br>"
-                        "Porcentaje del total: %{customdata[3]}%<extra></extra>"
-                    )
-                )
-            )])
-
-            fig_sankey.update_layout(
-                title=f"Transición vocacional compatible desde {carrera_sel}",
-                font=dict(size=14, color="black", family="Arial"),
-                plot_bgcolor="white",
-                paper_bgcolor="white",
-                height=760
-            )
-
-            st.plotly_chart(fig_sankey, use_container_width=True)
-            # -------------------------------------------------
-            # LISTADOS DE INTERVENCIÓN · TRANSICIÓN VOCACIONAL
-            # -------------------------------------------------
+            # -------------------------
+            # Listados de transición
+            # -------------------------
             st.markdown("## 📋 Listado de estudiantes por transición vocacional compatible")
             st.caption(
                 "Aquí se muestran los estudiantes de la carrera seleccionada agrupados según su "
-                "destino vocacional compatible. Esto permite identificar a quiénes conviene intervenir "
-                "desde orientación vocacional o seguimiento académico."
+                "destino vocacional compatible. Esto permite identificar a quiénes conviene intervenir."
             )
 
-            col_email = detectar_columna_email(df)
-
-            columnas_exportar_trans = [columna_nombre]
-            if col_email is not None:
-                columnas_exportar_trans.append(col_email)
-            columnas_exportar_trans += [
+            columnas_exportar_trans = [
+                columna_nombre,
+                COLUMNA_EMAIL,
                 columna_carrera,
                 'Area_Fuerte_Ponderada',
                 'Semáforo Vocacional',
                 'Destino_Compatible'
             ]
+            columnas_exportar_trans = [c for c in columnas_exportar_trans if c in sub.columns]
 
             destinos_ordenados = flujos['Destino_Compatible'].tolist()
             tabs_trans = st.tabs(destinos_ordenados)
@@ -1280,14 +912,22 @@ def render_analisis_general():
 
                     if sub_dest.empty:
                         st.info(f"No hay estudiantes con destino compatible '{destino}'.")
-                        hojas_transicion[destino] = pd.DataFrame(columns=columnas_exportar_trans)
+                        hojas_transicion[destino] = pd.DataFrame(columns=[
+                            'Nombre del estudiante',
+                            'Correo electrónico',
+                            'Carrera elegida',
+                            'Área fuerte CHASIDE',
+                            'Semáforo vocacional',
+                            'Carrera sugerida compatible'
+                        ])
                     else:
                         tabla_dest = (
                             sub_dest[columnas_exportar_trans]
+                            .copy()
                             .sort_values(columna_nombre)
                             .rename(columns={
                                 columna_nombre: 'Nombre del estudiante',
-                                col_email if col_email else '': 'Correo electrónico',
+                                COLUMNA_EMAIL: 'Correo electrónico',
                                 columna_carrera: 'Carrera elegida',
                                 'Area_Fuerte_Ponderada': 'Área fuerte CHASIDE',
                                 'Semáforo Vocacional': 'Semáforo vocacional',
@@ -1295,191 +935,20 @@ def render_analisis_general():
                             })
                         )
 
-                        if col_email is None and '' in tabla_dest.columns:
-                            tabla_dest = tabla_dest.drop(columns=[''])
-
                         st.dataframe(tabla_dest, use_container_width=True)
                         st.metric("Total de estudiantes", len(tabla_dest))
-
                         hojas_transicion[destino] = tabla_dest
 
             excel_transicion = dataframe_a_excel_bytes(hojas_transicion)
 
             st.download_button(
-                label=f"⬇️ Descargar listado de transición vocacional de {carrera_sel} (.xlsx)",
+                label=f"⬇️ Descargar listado de transición vocacional de {str(carrera_sel)} (.xlsx)",
                 data=excel_transicion,
                 file_name=f"listado_transicion_{str(carrera_sel).replace(' ', '_')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                key=f"download_transicion_{carrera_sel}"
+                key=f"download_transicion_{str(carrera_sel)}"
             )
-    
-    # Pareto
-    st.header("📊 Prioridades CHASIDE por carrera")
-    st.caption(
-        "Seleccione una carrera para comparar el promedio del grupo 'Perfil en riesgo' "
-        "contra el promedio del grupo 'Jóven promesa'."
-    )
-
-    df_pareto = df.copy()
-    for a in AREAS:
-        df_pareto[a] = df[f'INTERES_{a}'] + df[f'APTITUD_{a}']
-
-    df_pareto = df_pareto.loc[df_intensidad.index].copy()
-    df_pareto['Nivel_Intensidad'] = df_intensidad['Nivel_Intensidad'].values
-    df_pareto['Carrera'] = df.loc[df_pareto.index, columna_carrera].values
-    df_pareto['Carrera_Corta'] = (
-        df_pareto['Carrera']
-        .astype(str)
-        .str.replace('Ingeniería', 'Ing.', regex=False)
-    )
-
-    carreras_disp_p = sorted(df_pareto['Carrera_Corta'].dropna().unique())
-    carrera_sel_corta = st.selectbox("Seleccione una carrera:", carreras_disp_p, key="select_pareto_fusion")
-
-    sub = df_pareto[df_pareto['Carrera_Corta'] == carrera_sel_corta].copy()
-    riesgo = sub[sub['Nivel_Intensidad'] == 'Perfil en riesgo'].copy()
-    promesa = sub[sub['Nivel_Intensidad'] == 'Jóven promesa'].copy()
-
-    if riesgo.empty or promesa.empty:
-        st.warning("No hay suficientes estudiantes en 'Perfil en riesgo' y 'Jóven promesa' para esta carrera.")
-    else:
-        prom_riesgo = riesgo[AREAS].mean()
-        prom_promesa = promesa[AREAS].mean()
-
-        resultados = []
-        for a in AREAS:
-            meta = prom_promesa[a]
-            medido = prom_riesgo[a]
-            error_pct = 0.0 if meta == 0 else max(((meta - medido) / meta) * 100, 0.0)
-
-            resultados.append({
-                'Letra': a,
-                'Área': AREAS_LONG[a],
-                'Meta': float(meta),
-                'Medido': float(medido),
-                'Error_Porcentual': float(error_pct)
-            })
-
-        df_plot = pd.DataFrame(resultados).sort_values('Error_Porcentual', ascending=False).reset_index(drop=True)
-
-        total_error = df_plot['Error_Porcentual'].sum()
-        if total_error == 0:
-            df_plot['Porcentaje_Relativo'] = 0.0
-            df_plot['Acumulado'] = 0.0
-        else:
-            df_plot['Porcentaje_Relativo'] = df_plot['Error_Porcentual'] / total_error * 100
-            df_plot['Acumulado'] = df_plot['Porcentaje_Relativo'].cumsum()
-
-        df_plot['Dentro_80'] = False
-        acumulado_tmp = 0.0
-        for idx in df_plot.index:
-            if acumulado_tmp < 80:
-                df_plot.at[idx, 'Dentro_80'] = True
-                acumulado_tmp = df_plot.at[idx, 'Acumulado']
-
-        colores_barras = []
-        for _, row in df_plot.iterrows():
-            if row['Dentro_80']:
-                if row['Error_Porcentual'] >= 25:
-                    colores_barras.append('#b91c1c')
-                elif row['Error_Porcentual'] >= 15:
-                    colores_barras.append('#ea580c')
-                else:
-                    colores_barras.append('#f59e0b')
-            else:
-                colores_barras.append('#94a3b8')
-
-        fig_pareto = go.Figure()
-        fig_pareto.add_bar(
-            x=df_plot['Letra'],
-            y=df_plot['Error_Porcentual'],
-            name='Error porcentual de estudiantes en rezago respecto a alto desempeño',
-            marker_color=colores_barras,
-            customdata=np.stack(
-                [
-                    df_plot['Área'],
-                    df_plot['Meta'],
-                    df_plot['Medido'],
-                    df_plot['Porcentaje_Relativo'],
-                    df_plot['Acumulado']
-                ],
-                axis=-1
-            ),
-            hovertemplate=(
-                "<b>Letra:</b> %{x}<br>"
-                "<b>Área:</b> %{customdata[0]}<br>"
-                "<b>Valor meta (Jóven promesa):</b> %{customdata[1]:.2f}<br>"
-                "<b>Valor medido (Perfil en riesgo):</b> %{customdata[2]:.2f}<br>"
-                "<b>Error porcentual:</b> %{y:.2f}%<br>"
-                "<b>Peso relativo:</b> %{customdata[3]:.2f}%<br>"
-                "<b>Error acumulado:</b> %{customdata[4]:.2f}%<extra></extra>"
-            )
-        )
-
-        fig_pareto.add_scatter(
-            x=df_plot['Letra'],
-            y=df_plot['Acumulado'],
-            name='Error porcentual acumulado',
-            mode='lines+markers',
-            yaxis='y2',
-            line=dict(color='#16a34a', width=3),
-            marker=dict(size=8, color='#16a34a')
-        )
-
-        fig_pareto.add_hline(y=80, line_dash='dash', line_color='#7c3aed', yref='y2')
-
-        fig_pareto.update_layout(
-            title=f"Pareto de prioridades CHASIDE – {carrera_sel_corta}",
-            xaxis_title="Letra CHASIDE",
-            yaxis_title="Error porcentual (%)",
-            yaxis2=dict(
-                title="Porcentaje acumulado (%)",
-                overlaying='y',
-                side='right',
-                range=[0, 110]
-            ),
-            legend=dict(orientation='h', y=-0.18, x=0.5, xanchor='center'),
-            height=680,
-            margin=dict(t=70, b=120)
-        )
-
-        st.plotly_chart(fig_pareto, use_container_width=True)
-
-        st.markdown("### 📝 Resumen ejecutivo de prioridades")
-
-        if total_error == 0:
-            st.success(
-                "No se observaron brechas entre 'Perfil en riesgo' y 'Jóven promesa' en esta carrera."
-            )
-        else:
-            criticas = df_plot[df_plot['Dentro_80']].copy()
-            letras_criticas = criticas['Letra'].tolist()
-            acumulado_final = criticas['Acumulado'].iloc[-1] if not criticas.empty else 0
-
-            st.markdown(
-                f"En **{carrera_sel_corta}**, las letras CHASIDE que concentran aproximadamente el "
-                f"**80% de la brecha acumulada** son: **{', '.join(letras_criticas)}**."
-            )
-
-            st.markdown(
-                f"Estas letras explican en conjunto **{acumulado_final:.1f}%** del problema detectado "
-                f"entre el grupo **Perfil en riesgo** y el grupo **Jóven promesa**."
-            )
-
-            st.markdown("**Áreas prioritarias de intervención y estrategia sugerida:**")
-            for _, row in criticas.iterrows():
-                letra = row['Letra']
-                estrategia = ESTRATEGIAS_CHASIDE.get(letra, {}).get("estrategia", "Sin estrategia definida.")
-                area_nombre = ESTRATEGIAS_CHASIDE.get(letra, {}).get("area", row['Área'])
-
-                st.markdown(
-                    f"""
-- **{letra} ({area_nombre})**  
-  **Brecha detectada:** error porcentual de **{row['Error_Porcentual']:.2f}%** y peso relativo de **{row['Porcentaje_Relativo']:.2f}%**.  
-  **Estrategia sugerida para {carrera_sel_corta}:** {estrategia}
-"""
-                )
 
 # -------------------------------------------------
 # RENDER 3 · INFORMACIÓN INDIVIDUAL
@@ -1491,14 +960,12 @@ def render_info_individual():
         "la recomendación individual y descargar el reporte en PDF."
     )
 
-    st.markdown("### 🧭 Selección de carrera y estudiante")
-
     carreras = sorted(df[columna_carrera].dropna().astype(str).unique())
     if not carreras:
-        st.warning("No hay carreras disponibles en el archivo.")
+        st.warning("No hay carreras disponibles.")
         return
 
-    carrera_sel = st.selectbox("Carrera a evaluar:", carreras, index=0)
+    carrera_sel = st.selectbox("Carrera a evaluar:", carreras, index=0, key="ind_carrera")
     d_carrera = df[df[columna_carrera] == carrera_sel].copy()
 
     if d_carrera.empty:
@@ -1506,7 +973,7 @@ def render_info_individual():
         return
 
     nombres = sorted(d_carrera[columna_nombre].astype(str).unique())
-    est_sel = st.selectbox("Estudiante:", nombres, index=0)
+    est_sel = st.selectbox("Estudiante:", nombres, index=0, key="ind_estudiante")
 
     alumno_mask = (df[columna_carrera] == carrera_sel) & (df[columna_nombre].astype(str) == est_sel)
     alumno = df[alumno_mask].copy()
@@ -1534,21 +1001,19 @@ def render_info_individual():
     if destino_compatible == carrera_sel:
         texto_transicion = "El perfil del estudiante se mantiene dentro de la carrera elegida."
     else:
-        texto_transicion = f"El perfil del estudiante presenta mejor ajuste hacia la carrera **{destino_compatible}**."
+        texto_transicion = f"El perfil del estudiante presenta mejor ajuste hacia la carrera {destino_compatible}."
 
     if pd.notna(nivel_alumno):
-        texto_intensidad = DESC_INTENSIDAD.get(nivel_alumno, nivel_alumno)
+        texto_intensidad = DESC_INTENSIDAD.get(nivel_alumno, str(nivel_alumno))
     else:
         texto_intensidad = "No fue posible determinar el nivel de intensidad vocacional para este estudiante."
 
     st.markdown("## 📍 Ubicación del estudiante dentro del análisis general")
     st.markdown(
         f"""
-- **Distribución general del estudiantado:** el estudiante pertenece a la categoría **{categoria_larga}**, 
-la cual concentra **{n_global_cat} estudiantes ({pct_global_cat:.1f}%)** del total evaluado.
+- **Distribución general del estudiantado:** el estudiante pertenece a la categoría **{categoria_larga}**, la cual concentra **{n_global_cat} estudiantes ({pct_global_cat:.1f}%)** del total evaluado.
 
-- **Distribución por carrera y categoría:** dentro de **{carrera_sel}**, el estudiante se ubica en la categoría 
-**{categoria_larga}**, grupo conformado por **{n_carrera_cat} estudiantes ({pct_carrera_cat:.1f}%)** de su carrera.
+- **Distribución por carrera y categoría:** dentro de **{carrera_sel}**, el estudiante se ubica en la categoría **{categoria_larga}**, grupo conformado por **{n_carrera_cat} estudiantes ({pct_carrera_cat:.1f}%)** de su carrera.
 
 - **Intensidad del perfil vocacional por carrera:** el estudiante fue clasificado como **{nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}**.  
   {texto_intensidad}
@@ -1573,8 +1038,7 @@ la cual concentra **{n_global_cat} estudiantes ({pct_global_cat:.1f}%)** del tot
         f"{categoria_larga}, grupo conformado por {n_carrera_cat} estudiantes ({pct_carrera_cat:.1f}%) de su carrera.\n"
         f"Intensidad del perfil vocacional por carrera: el estudiante fue clasificado como "
         f"{nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}. {texto_intensidad}\n"
-        f"Transición vocacional compatible por carrera: "
-        f"{'El perfil del estudiante se mantiene dentro de la carrera elegida.' if destino_compatible == carrera_sel else f'El perfil del estudiante presenta mejor ajuste hacia {destino_compatible}.'}"
+        f"Transición vocacional compatible por carrera: {texto_transicion}"
     )
 
     pdf_bytes = build_pdf_report(
@@ -1589,7 +1053,7 @@ la cual concentra **{n_global_cat} estudiantes ({pct_global_cat:.1f}%)** del tot
     st.download_button(
         label="⬇️ Descargar perfil identificado en PDF",
         data=pdf_bytes,
-        file_name=f"perfil_CHASIDE_{est_sel.replace(' ', '_')}.pdf",
+        file_name=f"perfil_CHASIDE_{str(est_sel).replace(' ', '_')}.pdf",
         mime="application/pdf",
         use_container_width=True
     )
