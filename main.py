@@ -765,329 +765,262 @@ def dataframe_a_excel_bytes(dic_hojas: dict) -> bytes:
     output.seek(0)
     return output.getvalue()
 
+COLUMNA_EMAIL = 'Dirección de correo electrónico'
 # -------------------------------------------------
 # RENDER 2 · ANÁLISIS GENERAL
 # -------------------------------------------------
+        # -------------------------------------------------
+        # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
+        # -------------------------------------------------
+        st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
+        st.caption(
+            "Este apartado permite identificar a los estudiantes clasificados en cada nivel "
+            "de intensidad vocacional para facilitar acciones de acompañamiento, canalización o seguimiento."
+        )
+
+        df_int_listado = df_intensidad.copy()
+
+        columnas_exportar = [
+            columna_nombre,
+            COLUMNA_EMAIL,
+            columna_carrera,
+            'Carrera_Corta',
+            'Semáforo Vocacional',
+            'Nivel_Intensidad'
+        ]
+        columnas_exportar = [c for c in columnas_exportar if c in df_int_listado.columns]
+
+        tabs_int = st.tabs([
+            "Sin perfil",
+            "Perfil en riesgo",
+            "Perfil en transición",
+            "Jóven promesa"
+        ])
+
+        hojas_intensidad = {}
+
+        for tab, nivel in zip(
+            tabs_int,
+            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
+        ):
+            with tab:
+                sub_nivel = df_int_listado[df_int_listado['Nivel_Intensidad'] == nivel].copy()
+
+                if sub_nivel.empty:
+                    st.info(f"No hay estudiantes clasificados como '{nivel}'.")
+                    hojas_intensidad[nivel] = pd.DataFrame(columns=[
+                        'Nombre del estudiante',
+                        'Correo electrónico',
+                        'Carrera',
+                        'Carrera corta',
+                        'Semáforo vocacional',
+                        'Nivel de intensidad'
+                    ])
+                else:
+                    tabla = (
+                        sub_nivel[columnas_exportar]
+                        .copy()
+                        .sort_values([columna_carrera, columna_nombre])
+                        .rename(columns={
+                            columna_nombre: 'Nombre del estudiante',
+                            COLUMNA_EMAIL: 'Correo electrónico',
+                            columna_carrera: 'Carrera',
+                            'Carrera_Corta': 'Carrera corta',
+                            'Semáforo Vocacional': 'Semáforo vocacional',
+                            'Nivel_Intensidad': 'Nivel de intensidad'
+                        })
+                    )
+
+                    st.dataframe(tabla, use_container_width=True)
+                    st.metric("Total de estudiantes", len(tabla))
+                    hojas_intensidad[nivel] = tabla
+
+        excel_intensidad = dataframe_a_excel_bytes(hojas_intensidad)
+
+        st.download_button(
+            label="⬇️ Descargar listado de intensidad vocacional (.xlsx)",
+            data=excel_intensidad,
+            file_name="listado_intensidad_vocacional.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="download_intensidad_xlsx"
+        )
 def render_analisis_general():
     st.title("Diagnóstico Vocacional - Escala CHASIDE")
-    st.caption(
-        f"Criterio de calidad de respuesta: el 10% inferior de la desviación intrapersona "
-        f"se clasifica como 'Respondió siempre igual'. Umbral actual = {umbral_intrapersonal:.4f}"
-    )
 
-    # Pastel
+    COLUMNA_EMAIL = 'Dirección de correo electrónico'
+
+    # =========================
+    # DISTRIBUCIÓN GENERAL
+    # =========================
     st.subheader("📊 Distribución de respuestas del estudiantado")
 
     df_pastel = df.copy()
     df_pastel['Categoría_Pastel'] = df_pastel['Semáforo Vocacional'].replace(CAT_MAP_LARGO)
 
-    resumen = (
-        df_pastel['Categoría_Pastel']
-        .value_counts()
-        .reset_index()
-    )
+    resumen = df_pastel['Categoría_Pastel'].value_counts().reset_index()
     resumen.columns = ['Categoría', 'N']
-
-    orden_pastel = [
-        'El perfil coincide con la carrera elegida',
-        'El perfil NO va acorde con la carrera elegida',
-        'No se observa un perfil prioritario',
-        'Respondió siempre igual'
-    ]
-
-    resumen['Categoría'] = pd.Categorical(resumen['Categoría'], categories=orden_pastel, ordered=True)
-    resumen = resumen.sort_values('Categoría')
-
-    total_estudiantes = int(resumen['N'].sum())
-    resumen['Porcentaje'] = np.where(total_estudiantes == 0, 0, resumen['N'] / total_estudiantes * 100)
 
     fig = px.pie(
         resumen,
         names='Categoría',
         values='N',
-        hole=0.35,
-        color='Categoría',
-        color_discrete_map={
-            'El perfil coincide con la carrera elegida': '#22c55e',
-            'El perfil NO va acorde con la carrera elegida': '#f59e0b',
-            'No se observa un perfil prioritario': '#6b7280',
-            'Respondió siempre igual': '#ef4444'
-        }
-    )
-    fig.update_traces(
-        textposition='inside',
-        texttemplate='%{percent:.1%}',
-        hovertemplate='<b>%{label}</b><br>Porcentaje: %{percent}<br>N: %{value}<extra></extra>'
-    )
-    fig.update_layout(
-        legend_title_text="Categoría",
-        legend=dict(orientation="h", y=-0.15, yanchor="top", x=0.5, xanchor="center"),
-        margin=dict(t=40, b=120)
+        hole=0.4
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    conteos = resumen.set_index('Categoría')['N'].to_dict()
-    porcentajes = resumen.set_index('Categoría')['Porcentaje'].to_dict()
-
-    st.markdown("### 📝 Reporte del diagnóstico general")
-    st.markdown(
-        f"""
-Esta escala tuvo una participación de **{total_estudiantes} estudiantes**. 
-De ellos, **{conteos.get('El perfil coincide con la carrera elegida', 0)} ({porcentajes.get('El perfil coincide con la carrera elegida', 0):.1f}%)** muestran que el perfil CHASIDE **coincide con la carrera elegida**.
-
-Por otro lado, **{conteos.get('El perfil NO va acorde con la carrera elegida', 0)} ({porcentajes.get('El perfil NO va acorde con la carrera elegida', 0):.1f}%)** presentan un perfil que **no va acorde con la carrera seleccionada**.
-
-Asimismo, **{conteos.get('No se observa un perfil prioritario', 0)} ({porcentajes.get('No se observa un perfil prioritario', 0):.1f}%)** no muestran un **perfil prioritario claramente definido**.
-
-Finalmente, **{conteos.get('Respondió siempre igual', 0)} ({porcentajes.get('Respondió siempre igual', 0):.1f}%)** fueron clasificados como **respondió siempre igual**.
-"""
-    )
-
-    # Barras por carrera
-    st.header("📊 Distribución por carrera y categoría")
-    st.caption(
-        "Se realizó un filtro por carrera para observar cómo respondieron los estudiantes "
-        "de cada programa educativo respecto a su ajuste vocacional."
-    )
-
-    df_barras = df.copy()
-    df_barras['Categoría_Barras'] = df_barras['Semáforo Vocacional'].replace(CAT_MAP_LARGO)
-
-    cats_order_largo = [
-        'El perfil coincide con la carrera elegida',
-        'El perfil NO va acorde con la carrera elegida',
-        'No se observa un perfil prioritario',
-        'Respondió siempre igual'
-    ]
-
-    color_map_largo = {
-        'El perfil coincide con la carrera elegida': '#22c55e',
-        'El perfil NO va acorde con la carrera elegida': '#f59e0b',
-        'No se observa un perfil prioritario': '#6b7280',
-        'Respondió siempre igual': '#ef4444'
-    }
-
-    stacked = (
-        df_barras[df_barras['Categoría_Barras'].isin(cats_order_largo)]
-        .groupby(['Carrera_Corta', 'Categoría_Barras'], dropna=False)
-        .size()
-        .reset_index(name='N')
-        .rename(columns={'Categoría_Barras': 'Categoría'})
-    )
-
-    stacked['Categoría'] = pd.Categorical(stacked['Categoría'], categories=cats_order_largo, ordered=True)
-
-    modo = st.radio(
-        "Modo de visualización",
-        options=["Proporción (100% apilado)", "Valores absolutos"],
-        horizontal=True,
-        index=0,
-        key="modo_barras_carrera"
-    )
-
-    if modo == "Proporción (100% apilado)":
-        stacked['%'] = (
-            stacked.groupby('Carrera_Corta')['N']
-            .transform(lambda x: 0 if x.sum() == 0 else (x / x.sum() * 100))
-        )
-
-        fig_stacked = px.bar(
-            stacked,
-            x='Carrera_Corta',
-            y='%',
-            color='Categoría',
-            category_orders={'Categoría': cats_order_largo},
-            color_discrete_map=color_map_largo,
-            barmode='stack',
-            text=stacked['%'].round(1).astype(str) + '%',
-            title="Proporción (%) de estudiantes por carrera y categoría"
-        )
-
-        fig_stacked.update_layout(
-            yaxis_title="Proporción (%)",
-            xaxis_title="Carrera",
-            xaxis_tickangle=-30,
-            height=680,
-            legend_title_text="Categoría",
-            legend=dict(orientation="h", y=-0.22, yanchor="top", x=0.5, xanchor="center"),
-            margin=dict(t=60, b=140)
-        )
-    else:
-        fig_stacked = px.bar(
-            stacked,
-            x='Carrera_Corta',
-            y='N',
-            color='Categoría',
-            category_orders={'Categoría': cats_order_largo},
-            color_discrete_map=color_map_largo,
-            barmode='stack',
-            text='N',
-            title="Estudiantes por carrera y categoría (valores absolutos)"
-        )
-
-        fig_stacked.update_layout(
-            yaxis_title="Número de estudiantes",
-            xaxis_title="Carrera",
-            xaxis_tickangle=-30,
-            height=680,
-            legend_title_text="Categoría",
-            legend=dict(orientation="h", y=-0.22, yanchor="top", x=0.5, xanchor="center"),
-            margin=dict(t=60, b=140)
-        )
-        fig_stacked.update_traces(textposition='inside', cliponaxis=False)
-
-    st.plotly_chart(fig_stacked, use_container_width=True)
-
-    st.markdown("### 📝 Reporte por carrera")
-    resumen_carreras = (
-        df_barras.groupby(['Carrera_Corta', 'Categoría_Barras'])
-        .size()
-        .unstack(fill_value=0)
-    )
-
-    for c in cats_order_largo:
-        if c not in resumen_carreras.columns:
-            resumen_carreras[c] = 0
-
-    resumen_carreras = resumen_carreras[cats_order_largo].copy()
-    resumen_carreras['Total'] = resumen_carreras.sum(axis=1)
-
-    for c in cats_order_largo:
-        resumen_carreras[f'%_{c}'] = np.where(
-            resumen_carreras['Total'] == 0,
-            0,
-            resumen_carreras[c] / resumen_carreras['Total'] * 100
-        )
-
-    top_verde = resumen_carreras.sort_values(
-        by='El perfil coincide con la carrera elegida',
-        ascending=False
-    ).head(2)
-
-    top_amarillo = resumen_carreras.sort_values(
-        by='El perfil NO va acorde con la carrera elegida',
-        ascending=False
-    ).head(2)
-
-    top_rojo = resumen_carreras.sort_values(
-        by='No se observa un perfil prioritario',
-        ascending=False
-    ).head(2)
-
-    st.markdown("**Carreras con mayor proporción de ajuste vocacional (verde):**")
-    for carrera, row in top_verde.iterrows():
-        st.markdown(
-            f"- **{carrera}**: {int(row['El perfil coincide con la carrera elegida'])} estudiantes "
-            f"({row['%_El perfil coincide con la carrera elegida']:.1f}%)."
-        )
-
-    st.markdown("**Carreras con mayor proporción de perfil no acorde (amarillo):**")
-    for carrera, row in top_amarillo.iterrows():
-        st.markdown(
-            f"- **{carrera}**: {int(row['El perfil NO va acorde con la carrera elegida'])} estudiantes "
-            f"({row['%_El perfil NO va acorde con la carrera elegida']:.1f}%)."
-        )
-
-    st.markdown("**Carreras con mayor proporción de perfil no prioritario:**")
-    for carrera, row in top_rojo.iterrows():
-        st.markdown(
-            f"- **{carrera}**: {int(row['No se observa un perfil prioritario'])} estudiantes "
-            f"({row['%_No se observa un perfil prioritario']:.1f}%)."
-        )
-
-    # Intensidad
+    # =========================
+    # INTENSIDAD
+    # =========================
     st.header("📊 Intensidad del perfil vocacional por carrera")
-    st.caption(
-        "Se construyeron dos distribuciones conceptuales: la primera corresponde a los estudiantes "
-        "cuyo perfil vocacional coincide con su elección de carrera, y la segunda agrupa a aquellos "
-        "estudiantes cuya elección de carrera no coincide con su perfil vocacional."
-    )
 
     if df_intensidad.empty:
-        st.info("No hay estudiantes en categorías Verde o Amarillo para construir la barra de intensidad.")
+        st.warning("No hay datos de intensidad.")
     else:
         resumen_intensidad = (
             df_intensidad
-            .groupby(['Carrera_Corta', 'Nivel_Intensidad'], dropna=False)
-            .agg(
-                N=(columna_nombre, 'count'),
-                Estudiantes=(columna_nombre, lambda x: "<br>".join(sorted(x.astype(str).tolist())))
-            )
-            .reset_index()
+            .groupby(['Carrera_Corta', 'Nivel_Intensidad'])
+            .size()
+            .reset_index(name='N')
         )
 
-        orden_niveles = ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
-        colores_niveles = {
-            'Sin perfil': '#dc2626',
-            'Perfil en riesgo': '#f59e0b',
-            'Perfil en transición': '#84cc16',
-            'Jóven promesa': '#16a34a'
-        }
-
-        resumen_intensidad['Nivel_Intensidad'] = pd.Categorical(
-            resumen_intensidad['Nivel_Intensidad'],
-            categories=orden_niveles,
-            ordered=True
-        )
-
-        resumen_intensidad = resumen_intensidad.sort_values(['Carrera_Corta', 'Nivel_Intensidad'])
-        resumen_intensidad['%'] = (
-            resumen_intensidad.groupby('Carrera_Corta')['N']
-            .transform(lambda x: 0 if x.sum() == 0 else (x / x.sum() * 100))
-        )
-
-        fig_intensidad = px.bar(
+        fig_int = px.bar(
             resumen_intensidad,
             x='Carrera_Corta',
-            y='%',
+            y='N',
             color='Nivel_Intensidad',
-            category_orders={'Nivel_Intensidad': orden_niveles},
-            color_discrete_map=colores_niveles,
-            barmode='stack',
-            text=resumen_intensidad['%'].round(1).astype(str) + '%',
-            title="Escala de intensidad vocacional por carrera"
+            barmode='stack'
+        )
+        st.plotly_chart(fig_int, use_container_width=True)
+
+        # =========================
+        # LISTADOS INTENSIDAD
+        # =========================
+        st.markdown("## 📋 Listado de intervención por intensidad")
+
+        columnas_exportar = [
+            columna_nombre,
+            COLUMNA_EMAIL,
+            columna_carrera,
+            'Nivel_Intensidad'
+        ]
+        columnas_exportar = [c for c in columnas_exportar if c in df_intensidad.columns]
+
+        tabs = st.tabs([
+            "Sin perfil",
+            "Perfil en riesgo",
+            "Perfil en transición",
+            "Jóven promesa"
+        ])
+
+        hojas = {}
+
+        for tab, nivel in zip(
+            tabs,
+            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
+        ):
+            with tab:
+                sub = df_intensidad[df_intensidad['Nivel_Intensidad'] == nivel]
+
+                if sub.empty:
+                    st.info("Sin datos")
+                    hojas[nivel] = pd.DataFrame()
+                else:
+                    tabla = (
+                        sub[columnas_exportar]
+                        .rename(columns={
+                            columna_nombre: 'Nombre',
+                            COLUMNA_EMAIL: 'Correo',
+                            columna_carrera: 'Carrera'
+                        })
+                    )
+
+                    st.dataframe(tabla, use_container_width=True)
+                    hojas[nivel] = tabla
+
+        # Exportación
+        excel_bytes = dataframe_a_excel_bytes(hojas)
+
+        st.download_button(
+            "⬇️ Descargar listado de intervención",
+            data=excel_bytes,
+            file_name="intervencion_vocacional.xlsx"
         )
 
-        fig_intensidad.update_layout(
-            yaxis_title="Proporción (%)",
-            xaxis_title="Carrera",
-            xaxis_tickangle=-30,
-            height=720,
-            legend_title_text="Nivel",
-            legend=dict(orientation="h", y=-0.25, yanchor="top", x=0.5, xanchor="center"),
-            margin=dict(t=60, b=150)
-        )
+    # =========================
+    # SANKEY
+    # =========================
+    st.header("🌊 Transición vocacional compatible")
 
-        fig_intensidad.update_traces(
-            customdata=np.stack(
-                [
-                    resumen_intensidad['Nivel_Intensidad'],
-                    resumen_intensidad['N'],
-                    resumen_intensidad['Estudiantes']
-                ],
-                axis=-1
-            ),
-            hovertemplate=(
-                "<b>Carrera:</b> %{x}<br>"
-                "<b>Nivel:</b> %{customdata[0]}<br>"
-                "<b>Porcentaje:</b> %{y:.1f}%<br>"
-                "<b>Número de estudiantes:</b> %{customdata[1]}<br>"
-                "<b>Estudiantes:</b><br>%{customdata[2]}"
-                "<extra></extra>"
+    df_sankey = df.copy()
+    df_sankey = df_sankey[df_sankey['Semáforo Vocacional'] != 'Respondió siempre igual']
+
+    carreras = sorted(df_sankey[columna_carrera].dropna().unique())
+
+    if carreras:
+        carrera_sel = st.selectbox("Selecciona carrera:", carreras)
+
+        sub = df_sankey[df_sankey[columna_carrera] == carrera_sel]
+
+        if not sub.empty:
+            flujos = sub['Destino_Compatible'].value_counts().reset_index()
+            flujos.columns = ['Destino', 'N']
+
+            fig = go.Figure(go.Sankey(
+                node=dict(label=[carrera_sel] + flujos['Destino'].tolist()),
+                link=dict(
+                    source=[0]*len(flujos),
+                    target=list(range(1, len(flujos)+1)),
+                    value=flujos['N']
+                )
+            ))
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # =========================
+            # LISTADOS TRANSICIÓN
+            # =========================
+            st.markdown("## 📋 Listado de intervención por transición")
+
+            columnas_exportar = [
+                columna_nombre,
+                COLUMNA_EMAIL,
+                columna_carrera,
+                'Destino_Compatible'
+            ]
+            columnas_exportar = [c for c in columnas_exportar if c in sub.columns]
+
+            tabs_trans = st.tabs(flujos['Destino'].tolist())
+
+            hojas_trans = {}
+
+            for tab, destino in zip(tabs_trans, flujos['Destino']):
+                with tab:
+                    sub_dest = sub[sub['Destino_Compatible'] == destino]
+
+                    if sub_dest.empty:
+                        st.info("Sin datos")
+                        hojas_trans[destino] = pd.DataFrame()
+                    else:
+                        tabla = (
+                            sub_dest[columnas_exportar]
+                            .rename(columns={
+                                columna_nombre: 'Nombre',
+                                COLUMNA_EMAIL: 'Correo',
+                                columna_carrera: 'Carrera'
+                            })
+                        )
+
+                        st.dataframe(tabla, use_container_width=True)
+                        hojas_trans[destino] = tabla
+
+            excel_trans = dataframe_a_excel_bytes(hojas_trans)
+
+            st.download_button(
+                "⬇️ Descargar transición vocacional",
+                data=excel_trans,
+                file_name="transicion_vocacional.xlsx"
             )
-        )
-
-        st.plotly_chart(fig_intensidad, use_container_width=True)
-
-        st.markdown("### Lectura sugerida de la escala")
-        st.markdown(
-            """
-- **Sin perfil**: estudiantes cuya elección de carrera no muestra correspondencia con su perfil vocacional.  
-- **Perfil en riesgo**: estudiantes cuyo perfil vocacional presenta una coincidencia mínima con la carrera elegida.  
-- **Perfil en transición**: estudiantes cuya elección profesional y perfil vocacional presentan congruencia, aunque aún en proceso de consolidación.  
-- **Jóven promesa**: estudiantes con alta congruencia entre su perfil vocacional y la carrera elegida.
-"""
-        )
         # -------------------------------------------------
         # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
         # -------------------------------------------------
