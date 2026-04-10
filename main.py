@@ -1140,8 +1140,8 @@ def render_analisis_general():
 def render_info_individual():
     st.title("📘 Información particular del estudiantado – CHASIDE")
     st.caption(
-        "Seleccione una carrera y un estudiante para consultar su ubicación dentro del análisis general, "
-        "la recomendación individual y descargar el reporte en PDF."
+        "Seleccione una carrera y un estudiante para consultar su perfil individual, "
+        "la recomendación vocacional y descargar el reporte en PDF."
     )
 
     carreras = sorted(df[columna_carrera].dropna().astype(str).unique())
@@ -1171,7 +1171,7 @@ def render_info_individual():
     if not df_intensidad.empty and alumno.index[0] in df_intensidad.index:
         nivel_alumno = df_intensidad.loc[alumno.index[0], 'Nivel_Intensidad']
 
-      categoria_larga = CAT_MAP_LARGO.get(al['Semáforo Vocacional'], al['Semáforo Vocacional'])
+    categoria_larga = CAT_MAP_LARGO.get(al['Semáforo Vocacional'], al['Semáforo Vocacional'])
 
     destino_compatible = al['Destino_Compatible']
     if destino_compatible == carrera_sel:
@@ -1184,12 +1184,16 @@ def render_info_individual():
     else:
         texto_intensidad = "No fue posible determinar el nivel de intensidad vocacional."
 
+    correo_participante = al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else "No disponible"
+    sexo_participante = al['Seleccione su sexo'] if 'Seleccione su sexo' in al.index else "No disponible"
+
     st.markdown("## 📄 Resumen individual del participante")
     st.markdown(
         f"""
 - **Nombre:** {est_sel}
+- **Correo electrónico:** {correo_participante}
+- **Sexo:** {sexo_participante}
 - **Carrera elegida:** {carrera_sel}
-- **Correo electrónico:** {al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else 'No disponible'}
 - **Área fuerte CHASIDE:** {al['Area_Fuerte_Ponderada']}
 - **Perfil identificado:** {categoria_larga}
 - **Intensidad vocacional:** {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}
@@ -1210,8 +1214,9 @@ def render_info_individual():
 
     texto_ubicacion_pdf = (
         f"Nombre: {est_sel}\n"
+        f"Correo electrónico: {correo_participante}\n"
+        f"Sexo: {sexo_participante}\n"
         f"Carrera elegida: {carrera_sel}\n"
-        f"Correo electrónico: {al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else 'No disponible'}\n"
         f"Área fuerte CHASIDE: {al['Area_Fuerte_Ponderada']}\n"
         f"Perfil identificado: {categoria_larga}\n"
         f"Intensidad vocacional: {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}\n"
@@ -1236,7 +1241,6 @@ def render_info_individual():
         mime="application/pdf",
         use_container_width=True
     )
-
 # -------------------------------------------------
 # APP
 # -------------------------------------------------
