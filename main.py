@@ -845,6 +845,7 @@ st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
             use_container_width=True,
             key="download_intensidad_xlsx"
         )
+
 def render_analisis_general():
     st.title("Diagnóstico Vocacional - Escala CHASIDE")
 
