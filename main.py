@@ -921,20 +921,19 @@ tabla = tabla.rename(columns={
                             'Carrera sugerida compatible'
                         ])
                     else:
-                        tabla_dest = (
-                            sub_dest[columnas_exportar_trans]
-                            .copy()
-                            .sort_values(columna_nombre)
-                            .rename(columns={
-                                columna_nombre: 'Nombre del estudiante',
-                                COLUMNA_EMAIL: 'Correo electrónico',
-                                columna_carrera: 'Carrera elegida',
-                                'Area_Fuerte_Ponderada': 'Área fuerte CHASIDE',
-                                'Semáforo Vocacional': 'Semáforo vocacional',
-                                'Destino_Compatible': 'Carrera sugerida compatible'
-                            })
-                        )
+tabla_dest = sub_dest[columnas_exportar_trans].copy()
 
+if columna_nombre in tabla_dest.columns:
+    tabla_dest = tabla_dest.sort_values(columna_nombre)
+
+tabla_dest = tabla_dest.rename(columns={
+    columna_nombre: 'Nombre del estudiante',
+    COLUMNA_EMAIL: 'Correo electrónico',
+    columna_carrera: 'Carrera elegida',
+    'Area_Fuerte_Ponderada': 'Área fuerte CHASIDE',
+    'Semáforo Vocacional': 'Semáforo vocacional',
+    'Destino_Compatible': 'Carrera sugerida compatible'
+})
                         st.dataframe(tabla_dest, use_container_width=True)
                         st.metric("Total de estudiantes", len(tabla_dest))
                         hojas_transicion[destino] = tabla_dest
