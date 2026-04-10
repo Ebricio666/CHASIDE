@@ -804,38 +804,43 @@ def render_analisis_general():
 
         hojas_intensidad = {}
 
-            for tab_dest, destino in zip(tabs_trans, destinos_ordenados):
-                with tab_dest:
-                    sub_dest = sub[sub['Destino_Compatible'] == destino].copy()
+        for tab, nivel in zip(
+            tabs_int,
+            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
+        ):
+            with tab:
+                sub_nivel = df_intensidad[df_intensidad['Nivel_Intensidad'] == nivel].copy()
 
-                    if sub_dest.empty:
-                        st.info(f"No hay estudiantes con destino compatible '{destino}'.")
-                        hojas_transicion[destino] = pd.DataFrame(columns=[
-                            'Nombre del estudiante',
-                            'Correo electrónico',
-                            'Carrera elegida',
-                            'Área fuerte CHASIDE',
-                            'Semáforo vocacional',
-                            'Carrera sugerida compatible'
-                        ])
-                    else:
-                        tabla_dest = sub_dest[columnas_exportar_trans].copy()
+                if sub_nivel.empty:
+                    st.info(f"No hay estudiantes clasificados como '{nivel}'.")
+                    hojas_intensidad[nivel] = pd.DataFrame(columns=[
+                        'Nombre del estudiante',
+                        'Correo electrónico',
+                        'Carrera',
+                        'Carrera corta',
+                        'Semáforo vocacional',
+                        'Nivel de intensidad'
+                    ])
+                else:
+                    tabla = sub_nivel[columnas_exportar].copy()
 
-                        if columna_nombre in tabla_dest.columns:
-                            tabla_dest = tabla_dest.sort_values(columna_nombre)
+                    columnas_orden = [c for c in [columna_carrera, columna_nombre] if c in tabla.columns]
+                    if columnas_orden:
+                        tabla = tabla.sort_values(columnas_orden)
 
-                        tabla_dest = tabla_dest.rename(columns={
-                            columna_nombre: 'Nombre del estudiante',
-                            COLUMNA_EMAIL: 'Correo electrónico',
-                            columna_carrera: 'Carrera elegida',
-                            'Area_Fuerte_Ponderada': 'Área fuerte CHASIDE',
-                            'Semáforo Vocacional': 'Semáforo vocacional',
-                            'Destino_Compatible': 'Carrera sugerida compatible'
-                        })
+                    tabla = tabla.rename(columns={
+                        columna_nombre: 'Nombre del estudiante',
+                        COLUMNA_EMAIL: 'Correo electrónico',
+                        columna_carrera: 'Carrera',
+                        'Carrera_Corta': 'Carrera corta',
+                        'Semáforo Vocacional': 'Semáforo vocacional',
+                        'Nivel_Intensidad': 'Nivel de intensidad'
+                    })
 
-                        st.dataframe(tabla_dest, use_container_width=True)
-                        st.metric("Total de estudiantes", len(tabla_dest))
-                        hojas_transicion[destino] = tabla_dest
+                    st.dataframe(tabla, use_container_width=True)
+                    st.metric("Total de estudiantes", len(tabla))
+                    hojas_intensidad[nivel] = tabla
+
         excel_intensidad = dataframe_a_excel_bytes(hojas_intensidad)
 
         st.download_button(
@@ -877,6 +882,7 @@ def render_analisis_general():
             ))
 
             st.plotly_chart(fig, use_container_width=True)
+
             # -------------------------
             # Listados de transición
             # -------------------------
