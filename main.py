@@ -735,6 +735,36 @@ capaz de:
             st.markdown(f"**Principales temas de investigación:** {autor['Temas']}")
             st.markdown(f"**ORCID:** {autor['ORCID']}")
 
+def detectar_columna_email(df: pd.DataFrame) -> str:
+    candidatos = [
+        'Escriba su correo electrónico',
+        'Dirección de correo electrónico',
+        'Correo electrónico',
+        'Email',
+        'email'
+    ]
+    for c in candidatos:
+        if c in df.columns:
+            return c
+
+    # búsqueda flexible
+    for c in df.columns:
+        cl = str(c).strip().lower()
+        if 'correo' in cl or 'email' in cl:
+            return c
+
+    return None
+
+
+def dataframe_a_excel_bytes(dic_hojas: dict) -> bytes:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        for nombre_hoja, df_hoja in dic_hojas.items():
+            nombre_limpio = str(nombre_hoja)[:31] if nombre_hoja else "Hoja"
+            df_hoja.to_excel(writer, index=False, sheet_name=nombre_limpio)
+    output.seek(0)
+    return output.getvalue()
+
 # -------------------------------------------------
 # RENDER 2 · ANÁLISIS GENERAL
 # -------------------------------------------------
@@ -1058,7 +1088,74 @@ Finalmente, **{conteos.get('Respondió siempre igual', 0)} ({porcentajes.get('Re
 - **Jóven promesa**: estudiantes con alta congruencia entre su perfil vocacional y la carrera elegida.
 """
         )
+        # -------------------------------------------------
+        # LISTADOS DE INTERVENCIÓN · INTENSIDAD VOCACIONAL
+        # -------------------------------------------------
+        st.markdown("## 📋 Listado de estudiantes por intensidad vocacional")
+        st.caption(
+            "Este apartado permite identificar a los estudiantes clasificados en cada nivel "
+            "de intensidad vocacional para facilitar acciones de acompañamiento, canalización o seguimiento."
+        )
 
+        col_email = detectar_columna_email(df)
+
+        columnas_exportar = [columna_nombre]
+        if col_email is not None:
+            columnas_exportar.append(col_email)
+        columnas_exportar += [columna_carrera, 'Carrera_Corta', 'Semáforo Vocacional', 'Nivel_Intensidad']
+
+        df_int_listado = df_intensidad.copy()
+
+        tabs_int = st.tabs([
+            "Sin perfil",
+            "Perfil en riesgo",
+            "Perfil en transición",
+            "Jóven promesa"
+        ])
+
+        hojas_intensidad = {}
+
+        for tab, nivel in zip(
+            tabs_int,
+            ['Sin perfil', 'Perfil en riesgo', 'Perfil en transición', 'Jóven promesa']
+        ):
+            with tab:
+                sub_nivel = df_int_listado[df_int_listado['Nivel_Intensidad'] == nivel].copy()
+
+                if sub_nivel.empty:
+                    st.info(f"No hay estudiantes clasificados como '{nivel}'.")
+                    hojas_intensidad[nivel] = pd.DataFrame(columns=columnas_exportar)
+                else:
+                    tabla = (
+                        sub_nivel[columnas_exportar]
+                        .sort_values([columna_carrera, columna_nombre])
+                        .rename(columns={
+                            columna_nombre: 'Nombre del estudiante',
+                            col_email if col_email else '': 'Correo electrónico',
+                            columna_carrera: 'Carrera'
+                        })
+                    )
+
+                    # si no hay email, evitar renombrado raro
+                    if col_email is None and '' in tabla.columns:
+                        tabla = tabla.drop(columns=[''])
+
+                    st.dataframe(tabla, use_container_width=True)
+                    st.metric("Total de estudiantes", len(tabla))
+
+                    hojas_intensidad[nivel] = tabla
+
+        excel_intensidad = dataframe_a_excel_bytes(hojas_intensidad)
+
+        st.download_button(
+            label="⬇️ Descargar listado de intensidad vocacional (.xlsx)",
+            data=excel_intensidad,
+            file_name="listado_intensidad_vocacional.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="download_intensidad_xlsx"
+        )
+    
     # Sankey
     st.header("🌊 Transición vocacional compatible por carrera")
     st.caption(
@@ -1158,7 +1255,73 @@ Finalmente, **{conteos.get('Respondió siempre igual', 0)} ({porcentajes.get('Re
             )
 
             st.plotly_chart(fig_sankey, use_container_width=True)
+            # -------------------------------------------------
+            # LISTADOS DE INTERVENCIÓN · TRANSICIÓN VOCACIONAL
+            # -------------------------------------------------
+            st.markdown("## 📋 Listado de estudiantes por transición vocacional compatible")
+            st.caption(
+                "Aquí se muestran los estudiantes de la carrera seleccionada agrupados según su "
+                "destino vocacional compatible. Esto permite identificar a quiénes conviene intervenir "
+                "desde orientación vocacional o seguimiento académico."
+            )
 
+            col_email = detectar_columna_email(df)
+
+            columnas_exportar_trans = [columna_nombre]
+            if col_email is not None:
+                columnas_exportar_trans.append(col_email)
+            columnas_exportar_trans += [
+                columna_carrera,
+                'Area_Fuerte_Ponderada',
+                'Semáforo Vocacional',
+                'Destino_Compatible'
+            ]
+
+            destinos_ordenados = flujos['Destino_Compatible'].tolist()
+            tabs_trans = st.tabs(destinos_ordenados)
+
+            hojas_transicion = {}
+
+            for tab_dest, destino in zip(tabs_trans, destinos_ordenados):
+                with tab_dest:
+                    sub_dest = sub[sub['Destino_Compatible'] == destino].copy()
+
+                    if sub_dest.empty:
+                        st.info(f"No hay estudiantes con destino compatible '{destino}'.")
+                        hojas_transicion[destino] = pd.DataFrame(columns=columnas_exportar_trans)
+                    else:
+                        tabla_dest = (
+                            sub_dest[columnas_exportar_trans]
+                            .sort_values(columna_nombre)
+                            .rename(columns={
+                                columna_nombre: 'Nombre del estudiante',
+                                col_email if col_email else '': 'Correo electrónico',
+                                columna_carrera: 'Carrera elegida',
+                                'Area_Fuerte_Ponderada': 'Área fuerte CHASIDE',
+                                'Semáforo Vocacional': 'Semáforo vocacional',
+                                'Destino_Compatible': 'Carrera sugerida compatible'
+                            })
+                        )
+
+                        if col_email is None and '' in tabla_dest.columns:
+                            tabla_dest = tabla_dest.drop(columns=[''])
+
+                        st.dataframe(tabla_dest, use_container_width=True)
+                        st.metric("Total de estudiantes", len(tabla_dest))
+
+                        hojas_transicion[destino] = tabla_dest
+
+            excel_transicion = dataframe_a_excel_bytes(hojas_transicion)
+
+            st.download_button(
+                label=f"⬇️ Descargar listado de transición vocacional de {carrera_sel} (.xlsx)",
+                data=excel_transicion,
+                file_name=f"listado_transicion_{str(carrera_sel).replace(' ', '_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"download_transicion_{carrera_sel}"
+            )
+    
     # Pareto
     st.header("📊 Prioridades CHASIDE por carrera")
     st.caption(
