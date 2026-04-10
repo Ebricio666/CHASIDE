@@ -851,9 +851,6 @@ def render_analisis_general():
 
     COLUMNA_EMAIL = 'Dirección de correo electrónico'
 
-    # =========================
-    # DISTRIBUCIÓN GENERAL
-    # =========================
     st.subheader("📊 Distribución de respuestas del estudiantado")
 
     df_pastel = df.copy()
@@ -870,9 +867,6 @@ def render_analisis_general():
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # =========================
-    # INTENSIDAD
-    # =========================
     st.header("📊 Intensidad del perfil vocacional por carrera")
 
     if df_intensidad.empty:
@@ -894,9 +888,6 @@ def render_analisis_general():
         )
         st.plotly_chart(fig_int, use_container_width=True)
 
-        # =========================
-        # LISTADOS INTENSIDAD
-        # =========================
         st.markdown("## 📋 Listado de intervención por intensidad")
 
         columnas_exportar = [
@@ -939,7 +930,6 @@ def render_analisis_general():
                     st.dataframe(tabla, use_container_width=True)
                     hojas[nivel] = tabla
 
-        # Exportación
         excel_bytes = dataframe_a_excel_bytes(hojas)
 
         st.download_button(
@@ -948,7 +938,75 @@ def render_analisis_general():
             file_name="intervencion_vocacional.xlsx"
         )
 
-    # =========================
+    st.header("🌊 Transición vocacional compatible")
+
+    df_sankey = df.copy()
+    df_sankey = df_sankey[df_sankey['Semáforo Vocacional'] != 'Respondió siempre igual']
+
+    carreras = sorted(df_sankey[columna_carrera].dropna().unique())
+
+    if carreras:
+        carrera_sel = st.selectbox("Selecciona carrera:", carreras)
+
+        sub = df_sankey[df_sankey[columna_carrera] == carrera_sel]
+
+        if not sub.empty:
+            flujos = sub['Destino_Compatible'].value_counts().reset_index()
+            flujos.columns = ['Destino', 'N']
+
+            fig = go.Figure(go.Sankey(
+                node=dict(label=[carrera_sel] + flujos['Destino'].tolist()),
+                link=dict(
+                    source=[0] * len(flujos),
+                    target=list(range(1, len(flujos) + 1)),
+                    value=flujos['N']
+                )
+            ))
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("## 📋 Listado de intervención por transición")
+
+            columnas_exportar = [
+                columna_nombre,
+                COLUMNA_EMAIL,
+                columna_carrera,
+                'Destino_Compatible'
+            ]
+            columnas_exportar = [c for c in columnas_exportar if c in sub.columns]
+
+            tabs_trans = st.tabs(flujos['Destino'].tolist())
+
+            hojas_trans = {}
+
+            for tab, destino in zip(tabs_trans, flujos['Destino']):
+                with tab:
+                    sub_dest = sub[sub['Destino_Compatible'] == destino]
+
+                    if sub_dest.empty:
+                        st.info("Sin datos")
+                        hojas_trans[destino] = pd.DataFrame()
+                    else:
+                        tabla = (
+                            sub_dest[columnas_exportar]
+                            .rename(columns={
+                                columna_nombre: 'Nombre',
+                                COLUMNA_EMAIL: 'Correo',
+                                columna_carrera: 'Carrera'
+                            })
+                        )
+
+                        st.dataframe(tabla, use_container_width=True)
+                        hojas_trans[destino] = tabla
+
+            excel_trans = dataframe_a_excel_bytes(hojas_trans)
+
+            st.download_button(
+                "⬇️ Descargar transición vocacional",
+                data=excel_trans,
+                file_name="transicion_vocacional.xlsx"
+            )
+# =========================
     # SANKEY
     # =========================
     st.header("🌊 Transición vocacional compatible")
