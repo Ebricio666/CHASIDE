@@ -1171,38 +1171,31 @@ def render_info_individual():
     if not df_intensidad.empty and alumno.index[0] in df_intensidad.index:
         nivel_alumno = df_intensidad.loc[alumno.index[0], 'Nivel_Intensidad']
 
-    categoria_larga = CAT_MAP_LARGO.get(al['Semáforo Vocacional'], al['Semáforo Vocacional'])
-
-    conteo_global = df['Semáforo Vocacional'].value_counts()
-    n_global_cat = int(conteo_global.get(al['Semáforo Vocacional'], 0))
-    pct_global_cat = (n_global_cat / len(df) * 100) if len(df) else 0
-
-    conteo_carrera = d_carrera['Semáforo Vocacional'].value_counts()
-    n_carrera_cat = int(conteo_carrera.get(al['Semáforo Vocacional'], 0))
-    pct_carrera_cat = (n_carrera_cat / len(d_carrera) * 100) if len(d_carrera) else 0
+      categoria_larga = CAT_MAP_LARGO.get(al['Semáforo Vocacional'], al['Semáforo Vocacional'])
 
     destino_compatible = al['Destino_Compatible']
     if destino_compatible == carrera_sel:
-        texto_transicion = "El perfil del estudiante se mantiene dentro de la carrera elegida."
+        texto_transicion = "El perfil se mantiene dentro de la carrera elegida."
     else:
-        texto_transicion = f"El perfil del estudiante presenta mejor ajuste hacia la carrera {destino_compatible}."
+        texto_transicion = f"El perfil muestra mejor ajuste hacia la carrera {destino_compatible}."
 
     if pd.notna(nivel_alumno):
         texto_intensidad = DESC_INTENSIDAD.get(nivel_alumno, str(nivel_alumno))
     else:
-        texto_intensidad = "No fue posible determinar el nivel de intensidad vocacional para este estudiante."
+        texto_intensidad = "No fue posible determinar el nivel de intensidad vocacional."
 
-    st.markdown("## 📍 Ubicación del estudiante dentro del análisis general")
+    st.markdown("## 📄 Resumen individual del participante")
     st.markdown(
         f"""
-- **Distribución general del estudiantado:** el estudiante pertenece a la categoría **{categoria_larga}**, la cual concentra **{n_global_cat} estudiantes ({pct_global_cat:.1f}%)** del total evaluado.
-
-- **Distribución por carrera y categoría:** dentro de **{carrera_sel}**, el estudiante se ubica en la categoría **{categoria_larga}**, grupo conformado por **{n_carrera_cat} estudiantes ({pct_carrera_cat:.1f}%)** de su carrera.
-
-- **Intensidad del perfil vocacional por carrera:** el estudiante fue clasificado como **{nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}**.  
-  {texto_intensidad}
-
-- **Transición vocacional compatible por carrera:** {texto_transicion}
+- **Nombre:** {est_sel}
+- **Carrera elegida:** {carrera_sel}
+- **Correo electrónico:** {al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else 'No disponible'}
+- **Área fuerte CHASIDE:** {al['Area_Fuerte_Ponderada']}
+- **Perfil identificado:** {categoria_larga}
+- **Intensidad vocacional:** {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}
+- **Interpretación de intensidad:** {texto_intensidad}
+- **Carrera sugerida compatible:** {destino_compatible}
+- **Interpretación vocacional:** {texto_transicion}
 """
     )
 
@@ -1216,13 +1209,15 @@ def render_info_individual():
     st.markdown(texto_conclusion)
 
     texto_ubicacion_pdf = (
-        f"Distribución general del estudiantado: el estudiante pertenece a la categoría {categoria_larga}, "
-        f"la cual concentra {n_global_cat} estudiantes ({pct_global_cat:.1f}%) del total evaluado.\n"
-        f"Distribución por carrera y categoría: dentro de {carrera_sel}, el estudiante se ubica en la categoría "
-        f"{categoria_larga}, grupo conformado por {n_carrera_cat} estudiantes ({pct_carrera_cat:.1f}%) de su carrera.\n"
-        f"Intensidad del perfil vocacional por carrera: el estudiante fue clasificado como "
-        f"{nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}. {texto_intensidad}\n"
-        f"Transición vocacional compatible por carrera: {texto_transicion}"
+        f"Nombre: {est_sel}\n"
+        f"Carrera elegida: {carrera_sel}\n"
+        f"Correo electrónico: {al[COLUMNA_EMAIL] if COLUMNA_EMAIL in al.index else 'No disponible'}\n"
+        f"Área fuerte CHASIDE: {al['Area_Fuerte_Ponderada']}\n"
+        f"Perfil identificado: {categoria_larga}\n"
+        f"Intensidad vocacional: {nivel_alumno if pd.notna(nivel_alumno) else 'No disponible'}\n"
+        f"Interpretación de intensidad: {texto_intensidad}\n"
+        f"Carrera sugerida compatible: {destino_compatible}\n"
+        f"Interpretación vocacional: {texto_transicion}"
     )
 
     pdf_bytes = build_pdf_report(
