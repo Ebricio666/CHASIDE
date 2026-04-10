@@ -822,21 +822,21 @@ def render_analisis_general():
                         'Nivel de intensidad'
                     ])
                 else:
-                    tabla = (
-                        sub_nivel[columnas_exportar]
-                        .copy()
-                        .sort_values([columna_carrera, columna_nombre])
-                        .rename(columns={
-                            columna_nombre: 'Nombre del estudiante',
-                            COLUMNA_EMAIL: 'Correo electrónico',
-                            columna_carrera: 'Carrera',
-                            'Carrera_Corta': 'Carrera corta',
-                            'Semáforo Vocacional': 'Semáforo vocacional',
-                            'Nivel_Intensidad': 'Nivel de intensidad'
-                        })
-                    )
+tabla = sub_nivel[columnas_exportar].copy()
 
-                    st.dataframe(tabla, use_container_width=True)
+columnas_orden = [c for c in [columna_carrera, columna_nombre] if c in tabla.columns]
+if columnas_orden:
+    tabla = tabla.sort_values(columnas_orden)
+
+tabla = tabla.rename(columns={
+    columna_nombre: 'Nombre del estudiante',
+    COLUMNA_EMAIL: 'Correo electrónico',
+    columna_carrera: 'Carrera',
+    'Carrera_Corta': 'Carrera corta',
+    'Semáforo Vocacional': 'Semáforo vocacional',
+    'Nivel_Intensidad': 'Nivel de intensidad'
+})
+.dataframe(tabla, use_container_width=True)
                     st.metric("Total de estudiantes", len(tabla))
                     hojas_intensidad[nivel] = tabla
 
