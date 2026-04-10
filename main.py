@@ -950,6 +950,190 @@ def render_analisis_general():
                 use_container_width=True,
                 key=f"download_transicion_{str(carrera_sel)}"
             )
+
+    # -------------------------
+    # Pareto
+    # -------------------------
+    st.header("📊 Prioridades CHASIDE por carrera")
+    st.caption(
+        "Seleccione una carrera para comparar el promedio del grupo 'Perfil en riesgo' "
+        "contra el promedio del grupo 'Jóven promesa'."
+    )
+
+    if df_intensidad.empty:
+        st.info("No hay datos suficientes para calcular el Pareto.")
+    else:
+        df_pareto = df.copy()
+
+        for a in AREAS:
+            df_pareto[a] = df[f'INTERES_{a}'] + df[f'APTITUD_{a}']
+
+        df_pareto = df_pareto.loc[df_intensidad.index].copy()
+        df_pareto['Nivel_Intensidad'] = df_intensidad['Nivel_Intensidad'].values
+        df_pareto['Carrera'] = df.loc[df_pareto.index, columna_carrera].values
+        df_pareto['Carrera_Corta'] = (
+            df_pareto['Carrera']
+            .astype(str)
+            .str.replace('Ingeniería', 'Ing.', regex=False)
+        )
+
+        carreras_disp_p = sorted(df_pareto['Carrera_Corta'].dropna().unique())
+
+        if carreras_disp_p:
+            carrera_sel_corta = st.selectbox(
+                "Seleccione una carrera para el Pareto:",
+                carreras_disp_p,
+                key="select_pareto_fusion"
+            )
+
+            sub_p = df_pareto[df_pareto['Carrera_Corta'] == carrera_sel_corta].copy()
+            riesgo = sub_p[sub_p['Nivel_Intensidad'] == 'Perfil en riesgo'].copy()
+            promesa = sub_p[sub_p['Nivel_Intensidad'] == 'Jóven promesa'].copy()
+
+            if riesgo.empty or promesa.empty:
+                st.warning("No hay suficientes estudiantes en 'Perfil en riesgo' y 'Jóven promesa' para esta carrera.")
+            else:
+                prom_riesgo = riesgo[AREAS].mean()
+                prom_promesa = promesa[AREAS].mean()
+
+                resultados = []
+                for a in AREAS:
+                    meta = prom_promesa[a]
+                    medido = prom_riesgo[a]
+                    error_pct = 0.0 if meta == 0 else max(((meta - medido) / meta) * 100, 0.0)
+
+                    resultados.append({
+                        'Letra': a,
+                        'Área': AREAS_LONG[a],
+                        'Meta': float(meta),
+                        'Medido': float(medido),
+                        'Error_Porcentual': float(error_pct)
+                    })
+
+                df_plot = (
+                    pd.DataFrame(resultados)
+                    .sort_values('Error_Porcentual', ascending=False)
+                    .reset_index(drop=True)
+                )
+
+                total_error = df_plot['Error_Porcentual'].sum()
+                if total_error == 0:
+                    df_plot['Porcentaje_Relativo'] = 0.0
+                    df_plot['Acumulado'] = 0.0
+                else:
+                    df_plot['Porcentaje_Relativo'] = df_plot['Error_Porcentual'] / total_error * 100
+                    df_plot['Acumulado'] = df_plot['Porcentaje_Relativo'].cumsum()
+
+                df_plot['Dentro_80'] = False
+                acumulado_tmp = 0.0
+                for idx in df_plot.index:
+                    if acumulado_tmp < 80:
+                        df_plot.at[idx, 'Dentro_80'] = True
+                        acumulado_tmp = df_plot.at[idx, 'Acumulado']
+
+                colores_barras = []
+                for _, row in df_plot.iterrows():
+                    if row['Dentro_80']:
+                        if row['Error_Porcentual'] >= 25:
+                            colores_barras.append('#b91c1c')
+                        elif row['Error_Porcentual'] >= 15:
+                            colores_barras.append('#ea580c')
+                        else:
+                            colores_barras.append('#f59e0b')
+                    else:
+                        colores_barras.append('#94a3b8')
+
+                fig_pareto = go.Figure()
+
+                fig_pareto.add_bar(
+                    x=df_plot['Letra'],
+                    y=df_plot['Error_Porcentual'],
+                    name='Error porcentual de estudiantes en rezago respecto a alto desempeño',
+                    marker_color=colores_barras,
+                    customdata=np.stack(
+                        [
+                            df_plot['Área'],
+                            df_plot['Meta'],
+                            df_plot['Medido'],
+                            df_plot['Porcentaje_Relativo'],
+                            df_plot['Acumulado']
+                        ],
+                        axis=-1
+                    ),
+                    hovertemplate=(
+                        "<b>Letra:</b> %{x}<br>"
+                        "<b>Área:</b> %{customdata[0]}<br>"
+                        "<b>Valor meta (Jóven promesa):</b> %{customdata[1]:.2f}<br>"
+                        "<b>Valor medido (Perfil en riesgo):</b> %{customdata[2]:.2f}<br>"
+                        "<b>Error porcentual:</b> %{y:.2f}%<br>"
+                        "<b>Peso relativo:</b> %{customdata[3]:.2f}%<br>"
+                        "<b>Error acumulado:</b> %{customdata[4]:.2f}%<extra></extra>"
+                    )
+                )
+
+                fig_pareto.add_scatter(
+                    x=df_plot['Letra'],
+                    y=df_plot['Acumulado'],
+                    name='Error porcentual acumulado',
+                    mode='lines+markers',
+                    yaxis='y2',
+                    line=dict(color='#16a34a', width=3),
+                    marker=dict(size=8, color='#16a34a')
+                )
+
+                fig_pareto.add_hline(y=80, line_dash='dash', line_color='#7c3aed', yref='y2')
+
+                fig_pareto.update_layout(
+                    title=f"Pareto de prioridades CHASIDE – {carrera_sel_corta}",
+                    xaxis_title="Letra CHASIDE",
+                    yaxis_title="Error porcentual (%)",
+                    yaxis2=dict(
+                        title="Porcentaje acumulado (%)",
+                        overlaying='y',
+                        side='right',
+                        range=[0, 110]
+                    ),
+                    legend=dict(orientation='h', y=-0.18, x=0.5, xanchor='center'),
+                    height=680,
+                    margin=dict(t=70, b=120)
+                )
+
+                st.plotly_chart(fig_pareto, use_container_width=True)
+
+                st.markdown("### 📝 Resumen ejecutivo de prioridades")
+
+                if total_error == 0:
+                    st.success(
+                        "No se observaron brechas entre 'Perfil en riesgo' y 'Jóven promesa' en esta carrera."
+                    )
+                else:
+                    criticas = df_plot[df_plot['Dentro_80']].copy()
+                    letras_criticas = criticas['Letra'].tolist()
+                    acumulado_final = criticas['Acumulado'].iloc[-1] if not criticas.empty else 0
+
+                    st.markdown(
+                        f"En **{carrera_sel_corta}**, las letras CHASIDE que concentran aproximadamente el "
+                        f"**80% de la brecha acumulada** son: **{', '.join(letras_criticas)}**."
+                    )
+
+                    st.markdown(
+                        f"Estas letras explican en conjunto **{acumulado_final:.1f}%** del problema detectado "
+                        f"entre el grupo **Perfil en riesgo** y el grupo **Jóven promesa**."
+                    )
+
+                    st.markdown("**Áreas prioritarias de intervención y estrategia sugerida:**")
+                    for _, row in criticas.iterrows():
+                        letra = row['Letra']
+                        estrategia = ESTRATEGIAS_CHASIDE.get(letra, {}).get("estrategia", "Sin estrategia definida.")
+                        area_nombre = ESTRATEGIAS_CHASIDE.get(letra, {}).get("area", row['Área'])
+
+                        st.markdown(
+                            f"""
+- **{letra} ({area_nombre})**  
+  **Brecha detectada:** error porcentual de **{row['Error_Porcentual']:.2f}%** y peso relativo de **{row['Porcentaje_Relativo']:.2f}%**.  
+  **Estrategia sugerida para {carrera_sel_corta}:** {estrategia}
+"""
+                        )
 # -------------------------------------------------
 # RENDER 3 · INFORMACIÓN INDIVIDUAL
 # -------------------------------------------------
