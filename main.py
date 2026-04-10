@@ -306,36 +306,79 @@ def process_data(df: pd.DataFrame, perfil_carreras: dict, peso_intereses: float,
     # -------------------------
     # Intensidad vocacional
     # -------------------------
+     # -------------------------
+    # Intensidad vocacional
+    # -------------------------
     df_intensidad = df[df['Semáforo Vocacional'].isin(['Verde', 'Amarillo'])].copy()
-def asignar_niveles_por_carrera(grupo):
-    grupo = grupo.copy()
-    grupo['Nivel_Intensidad'] = pd.Series(index=grupo.index, dtype='object')
 
-    amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
-    ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
+    def asignar_niveles_por_carrera(grupo):
+        grupo = grupo.copy()
+        grupo['Nivel_Intensidad'] = pd.Series(index=grupo.index, dtype='object')
 
-    if len(amar) > 0:
-        amar = amar.sort_values('Score', ascending=True).copy()
-        amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
-        amar['Nivel_Intensidad'] = np.where(
-            amar['rank_pct'] <= 0.25,
-            'Sin perfil',
-            'Perfil en riesgo'
+        amar = grupo[grupo['Semáforo Vocacional'] == 'Amarillo'].copy()
+        ver = grupo[grupo['Semáforo Vocacional'] == 'Verde'].copy()
+
+        if len(amar) > 0:
+            amar = amar.sort_values('Score', ascending=True).copy()
+            amar['rank_pct'] = (np.arange(len(amar)) + 1) / len(amar)
+            amar['Nivel_Intensidad'] = np.where(
+                amar['rank_pct'] <= 0.25,
+                'Sin perfil',
+                'Perfil en riesgo'
+            )
+            grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad'].astype(object)
+
+        if len(ver) > 0:
+            ver = ver.sort_values('Score', ascending=True).copy()
+            ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
+            ver['Nivel_Intensidad'] = np.where(
+                ver['rank_pct'] > 0.75,
+                'Jóven promesa',
+                'Perfil en transición'
+            )
+            grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad'].astype(object)
+
+        return grupo
+
+    if not df_intensidad.empty:
+        df_intensidad = (
+            df_intensidad
+            .groupby(columna_carrera, group_keys=False)
+            .apply(asignar_niveles_por_carrera)
+            .copy()
         )
-        grupo.loc[amar.index, 'Nivel_Intensidad'] = amar['Nivel_Intensidad'].astype(object)
 
-    if len(ver) > 0:
-        ver = ver.sort_values('Score', ascending=True).copy()
-        ver['rank_pct'] = (np.arange(len(ver)) + 1) / len(ver)
-        ver['Nivel_Intensidad'] = np.where(
-            ver['rank_pct'] > 0.75,
-            'Jóven promesa',
-            'Perfil en transición'
-        )
-        grupo.loc[ver.index, 'Nivel_Intensidad'] = ver['Nivel_Intensidad'].astype(object)
+    # -------------------------
+    # Destino compatible
+    # -------------------------
+    def letras_carrera(carrera):
+        return perfil_carreras.get(str(carrera).strip(), [])
 
-    return grupo
+    def puntaje_promedio_carrera(row, carrera):
+        letras = letras_carrera(carrera)
+        if not letras:
+            return np.nan
+        return np.mean([row[f'PUNTAJE_COMBINADO_{l}'] for l in letras])
 
+    def mejor_destino_compatible(row):
+        carrera = str(row[columna_carrera]).strip()
+        letras = letras_carrera(carrera)
+
+        mejor = carrera
+        mejor_score = puntaje_promedio_carrera(row, carrera)
+
+        for c, letras_c in perfil_carreras.items():
+            if len(set(letras).intersection(letras_c)) >= 2:
+                score = puntaje_promedio_carrera(row, c)
+                if pd.notna(score) and score > mejor_score:
+                    mejor_score = score
+                    mejor = c
+
+        return mejor
+
+    df['Destino_Compatible'] = df.apply(mejor_destino_compatible, axis=1)
+
+    return df, df_intensidad, columnas_items, columna_carrera, columna_nombre, umbral_intrapersonal
     if not df_intensidad.empty:
         df_intensidad = (
             df_intensidad
