@@ -504,9 +504,14 @@ seccion = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Escala / fuente de datos")
-url = st.sidebar.text_input(
-    "URL de la escala (CSV export)",
-    "https://docs.google.com/spreadsheets/d/1BNAeOSj2F378vcJE5-T8iJ8hvoseOleOHr-I7mVfYu4/export?format=csv"
+st.sidebar.markdown("### 📄 Formulario CHASIDE editable")
+
+st.sidebar.markdown(
+    """
+Puedes acceder al formulario base de CHASIDE para revisarlo, compartirlo o adaptarlo a tus propios estudios.
+
+[🔗 Abrir formulario CHASIDE en Google Forms](https://docs.google.com/forms/d/e/1FAIpQLSftTk69PPLsU08cGq_1Gj2jMlIJC50Ws81tXKft6QV2J-JRlA/viewform)
+"""
 )
 
 st.sidebar.markdown("---")
