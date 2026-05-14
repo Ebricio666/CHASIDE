@@ -617,7 +617,7 @@ Aunque ninguna prueba sustituye el acompañamiento humano, su utilidad radica en
     )
 
     st.markdown("## ¿Qué es CHASIDE y para qué sirve?")
-st.markdown(
+    st.markdown(
     """
 La escala **CHASIDE** es una prueba vocacional que integra dos componentes principales:
 
