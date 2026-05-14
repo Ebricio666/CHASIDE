@@ -617,27 +617,46 @@ Aunque ninguna prueba sustituye el acompañamiento humano, su utilidad radica en
     )
 
     st.markdown("## ¿Qué es CHASIDE y para qué sirve?")
-    st.markdown(
-        """
+st.markdown(
+    """
 La escala **CHASIDE** es una prueba vocacional que integra dos componentes principales:
 
-- **Intereses**: aquello que al estudiante le atrae o despierta curiosidad.
-- **Aptitudes**: aquello para lo que el estudiante parece tener mayor facilidad o potencial.
+- **Intereses**: aquello que al estudiante le atrae, le despierta curiosidad o le gustaría explorar.
+- **Aptitudes**: aquello para lo que el estudiante muestra mayor facilidad, habilidad o potencial.
 
-La escala organiza estas tendencias en siete áreas:
+La escala organiza estas tendencias en siete áreas vocacionales:
 
-- **C**: Administrativo  
-- **H**: Humanidades y Sociales  
-- **A**: Artístico  
-- **S**: Ciencias de la Salud  
-- **I**: Enseñanzas Técnicas  
-- **D**: Defensa y Seguridad  
-- **E**: Ciencias Experimentales  
+### **C – Área Administrativa**
+Se relaciona con estudiantes que muestran afinidad por la **organización, supervisión, orden, análisis, síntesis, colaboración y cálculo**.  
+Suelen presentar características como ser **persuasivos, objetivos, prácticos, tolerantes, responsables y ambiciosos**.
 
-Su propósito es identificar qué tan alineada está la elección profesional del estudiante con su perfil vocacional.
+### **H – Área de Humanidades y Ciencias Sociales y Jurídicas**
+Agrupa intereses y aptitudes vinculados con la **precisión verbal, organización, relación de hechos, lingüística, orden y justicia**.  
+Se asocia con personas **responsables, justas, conciliadoras, persuasivas, sagaces e imaginativas**.
+
+### **A – Área Artística**
+Incluye perfiles con inclinación hacia lo **estético, armónico, manual, visual y auditivo**.  
+Suelen distinguirse por ser **sensibles, imaginativos, creativos, detallistas, innovadores e intuitivos**.
+
+### **S – Área de Ciencias de la Salud**
+Se vincula con actividades como **asistir, investigar, observar con precisión, percibir, analizar y ayudar**.  
+Se asocia con estudiantes **altruistas, solidarios, pacientes, comprensivos, respetuosos y persuasivos**.
+
+### **I – Área de Enseñanzas Técnicas**
+Representa perfiles orientados al **cálculo, pensamiento científico, trabajo manual, exactitud y planificación**.  
+Suelen mostrar características como ser **precisos, prácticos, críticos, analíticos y rígidos en el seguimiento de procedimientos**.
+
+### **D – Área de Defensa y Seguridad**
+Incluye afinidad por la **justicia, equidad, colaboración, espíritu de equipo y liderazgo**.  
+Se relaciona con personas **arriesgadas, solidarias, valientes, persuasivas y orientadas a la acción**.
+
+### **E – Área de Ciencias Experimentales**
+Se asocia con la **investigación, orden, organización, análisis y síntesis, cálculo numérico y clasificación**.  
+Suele corresponder a estudiantes **metódicos, analíticos, observadores, introvertidos, pacientes y seguros**.
+
+En conjunto, CHASIDE permite identificar qué tan alineada está la elección profesional del estudiante con sus intereses, aptitudes y características vocacionales predominantes.
 """
-    )
-
+)
     st.markdown("## Propuesta Única de Valor (PUV)")
     st.markdown(
         """
